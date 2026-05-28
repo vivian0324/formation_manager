@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Formation Manager</title>
+<link href="https://fonts.googleapis.com/css2?family=DM+Mono:wght@300;400;500&family=Playfair+Display:wght@400;600&family=DM+Sans:wght@300;400;500&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="css/styles.css">
+</head>
+<body>
+
+<div class="app">
+<header>
+  <div><h1>Formation Manager</h1><div class="subtitle">CHOREOGRAPHY TOOL</div></div>
+  <div style="flex:1"></div>
+  <div class="save-dot" id="save-dot" title="Auto-saved"></div>
+  <div style="font-size:10px;color:var(--txt3);font-family:'DM Mono',monospace" id="save-lbl"></div>
+  <div class="pill">Phase: <span id="phase-lbl">Setup</span></div>
+</header>
+<div class="main">
+<!-- SIDEBAR -->
+<aside class="sidebar">
+  <div class="sbs">
+    <h3>Dancers</h3>
+    <div class="gc6">
+      <div class="ir"><input type="text" id="nd-name" placeholder="Name…"/><button class="btn-sm btn-acc" onclick="addDancer()">+</button></div>
+      <button class="btn btn-sm" onclick="showBulk()" style="width:100%">Bulk add (paste list)</button>
+    </div>
+  </div>
+  <div class="sbs" style="flex:1;overflow-y:auto">
+    <h3>Roster <span id="d-count" class="mono" style="color:var(--acc);font-size:10px"></span></h3>
+    <div class="tm" style="margin-bottom:5px">Click to toggle absent / VIP</div>
+    <div id="d-list"></div>
+  </div>
+  <div class="sbs">
+    <h3>Absent dancers</h3>
+    <div class="tm" style="margin-bottom:5px">Select multiple. Same across all formations.</div>
+    <div id="abs-list" class="multi-sel"></div>
+  </div>
+  <div class="sbs">
+    <h3>VIP dancers</h3>
+    <div class="tm" style="margin-bottom:5px">Select up to 3. Set backups below.</div>
+    <div id="vip-list" class="multi-sel"></div>
+    <div id="vip-backup-section" class="mt8" style="display:none">
+      <div class="tm" style="margin-bottom:4px">Backup VIPs (up to 3 per slot):</div>
+      <div id="vip-backups"></div>
+    </div>
+  </div>
+  <div class="sbs">
+    <h3>Stage direction</h3>
+    <div class="row">
+      <button class="btn btn-sm f1" id="btn-bot" onclick="setDir('bot')" style="justify-content:center">↑ Audience bottom</button>
+    </div>
+    <div class="row" style="margin-top:4px">
+      <button class="btn btn-sm f1" id="btn-top" onclick="setDir('top')" style="justify-content:center">↓ Audience top</button>
+    </div>
+  </div>
+  <div class="sbs">
+    <h3>Actions</h3>
+    <div class="gc6">
+      <button class="btn" style="width:100%" onclick="showPanel('setup')">① Setup</button>
+      <button class="btn" style="width:100%" onclick="showPanel('formations')">② Formations</button>
+      <button class="btn btn-acc" style="width:100%" onclick="runOptimize()">③ Optimize ↗</button>
+      <button class="btn" style="width:100%" onclick="doExport()">Export HTML</button>
+      <button class="btn btn-red btn-sm" style="width:100%" onclick="resetAll()">Reset all</button>
+      <button class="btn btn-sm" style="width:100%;color:var(--blu);border-color:var(--blu)" onclick="debugFormation()">🔍 Debug coords (→ console)</button>
+    </div>
+  </div>
+</aside>
+<!-- CONTENT -->
+<main class="content">
+  <!-- SETUP -->
+  <div class="panel vis" id="panel-setup">
+    <div class="steps" data-panel="setup">
+      <div class="step" onclick="showPanel('setup')">1 · Setup</div>
+      <div class="step" onclick="showPanel('formations')">2 · Formations</div>
+      <div class="step" onclick="showPanel('results')">3 · Results</div>
+    </div>
+    <h2 style="font-family:'Playfair Display',serif;font-size:20px;margin-bottom:4px">Setup</h2>
+    <p class="tm" style="margin-bottom:14px">Add dancers, set direction, then go build formations. Your work is auto-saved in the browser.</p>
+    <div class="alert al-info"><span>ℹ</span><div><strong>Workflow:</strong> (1) Add all dancers. (2) Set stage direction. (3) Go to Formations — start with one formation, save it, then click "+ Add (copy last)" to build the next from a copy. (4) Mark absent + VIP dancers in the sidebar. (5) Optimize.</div></div>
+    <div class="gc12">
+      <div>
+        <label class="tm" style="display:block;margin-bottom:3px">PERFORMANCE TITLE</label>
+        <input type="text" id="perf-title" placeholder="e.g. Spring Showcase 2025" style="max-width:340px" oninput="autoSave()"/>
+      </div>
+      <div>
+        <label class="tm" style="display:block;margin-bottom:3px">DEFAULT STAGE SHAPE (for first auto-place)</label>
+        <select id="def-shape" style="max-width:220px" onchange="autoSave()">
+          <option value="grid">Grid / rectangular</option>
+          <option value="arc">Arc / fan</option>
+          <option value="diagonal">Diagonal lines</option>
+          <option value="free">Free / scattered</option>
+        </select>
+      </div>
+    </div>
+    <div class="mt16">
+      <button class="btn btn-acc" onclick="goFormations()">Go to Formations →</button>
+    </div>
+  </div>
+
+  <!-- FORMATIONS -->
+  <div class="panel" id="panel-formations">
+    <div class="steps" data-panel="formations">
+      <div class="step" onclick="showPanel('setup')">1 · Setup</div>
+      <div class="step" onclick="showPanel('formations')">2 · Formations</div>
+      <div class="step" onclick="showPanel('results')">3 · Results</div>
+    </div>
+    <div style="display:flex;align-items:center;gap:7px;margin-bottom:12px;flex-wrap:wrap">
+      <h2 style="font-family:'Playfair Display',serif;font-size:17px">Formations</h2>
+      <button class="btn btn-sm" onclick="addFormationCopy()">+ Add (copy last)</button>
+      <button class="btn btn-sm" onclick="addFormationBlank()">+ Add (blank)</button>
+      <div style="flex:1"></div>
+      <button class="btn btn-acc" onclick="runOptimize()">Optimize ↗</button>
+    </div>
+    <div class="alert al-info" id="f-tip"><span>ℹ</span><div>Build formations with <strong>all</strong> dancers (absent included). Set pose and VIP per formation in the editor. <strong>Ctrl/Cmd+click</strong> to multi-select dancers and move together.</div></div>
+    <div class="leg">
+      <span class="leg-item"><span class="leg-dot" style="background:var(--blu)"></span>Stand</span>
+      <span class="leg-item"><span class="leg-dot" style="background:var(--pur)"></span>Floor</span>
+      <span class="leg-item"><span class="leg-dot" style="background:#e8997a"></span>←Left</span>
+      <span class="leg-item"><span class="leg-dot" style="background:#7ac9a0"></span>Right→</span>
+      <span class="leg-item"><span class="leg-dot" style="background:var(--acc);border:2px solid var(--acc)"></span>VIP</span>
+      <span class="leg-item"><span class="leg-dot" style="background:var(--red);opacity:.4"></span>Absent</span>
+    </div>
+    <div id="f-list"></div>
+  </div>
+
+  <!-- RESULTS -->
+  <div class="panel" id="panel-results">
+    <div class="steps" data-panel="results">
+      <div class="step" onclick="showPanel('setup')">1 · Setup</div>
+      <div class="step" onclick="showPanel('formations')">2 · Formations</div>
+      <div class="step" onclick="showPanel('results')">3 · Results</div>
+    </div>
+    <h2 style="font-family:'Playfair Display',serif;font-size:20px;margin-bottom:4px">Optimized Formations</h2>
+    <p class="tm" style="margin-bottom:12px">Absent dancer removed. The 2 dancers nearest to the gap mirror to stand side by side at centre. Formations that remain symmetric after removal are kept exactly as-is.</p>
+    <div class="sumbar" id="res-summary"></div>
+    <div id="res-list"></div>
+  </div>
+</main>
+</div>
+</div>
+
+<!-- EDITOR OVERLAY -->
+<div class="eo" id="eo">
+  <div class="eh">
+    <div>
+      <h2 id="e-title">Edit Formation</h2>
+      <div style="font-size:10px;color:var(--txt3);font-family:'DM Mono',monospace;margin-top:1px">Drag from palette → stage · drag to reposition · Ctrl/Cmd+click multi-select · right-click to remove</div>
+    </div>
+    <div style="flex:1"></div>
+    <label style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--txt3);cursor:pointer">
+      <input type="checkbox" id="snap-chk" checked> Snap to grid
+    </label>
+    <button class="btn btn-sm" onclick="eAutoPlace()">↻ Auto</button>
+    <div style="position:relative">
+      <button class="btn btn-sm" onclick="toggleRotMenu()">⟳ Rotate ▾</button>
+      <div id="rot-menu" style="display:none;position:absolute;top:100%;right:0;margin-top:3px;background:var(--surf);border:1px solid var(--bdr2);border-radius:var(--r);padding:6px;z-index:10;min-width:180px">
+        <div style="font-size:10px;color:var(--txt3);margin-bottom:5px;font-family:'DM Mono',monospace">ROTATE ALL DANCERS</div>
+        <div class="rot-row">
+          <button class="btn btn-sm" onclick="rotateAll(90,'cw')">90° CW</button>
+          <button class="btn btn-sm" onclick="rotateAll(90,'ccw')">90° CCW</button>
+          <button class="btn btn-sm" onclick="rotateAll(180,'cw')">180°</button>
+        </div>
+      </div>
+    </div>
+    <button class="btn btn-sm btn-red" onclick="eClearAll()">Clear</button>
+    <button class="btn btn-grn" onclick="eSave()">Save ✓</button>
+    <button class="btn btn-sm" onclick="eClose()">Cancel</button>
+  </div>
+  <div class="eb">
+    <div class="esc">
+      <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
+        <span class="tm">Drag · right-click/× to remove · Ctrl/Cmd+click to multi-select</span>
+        <div style="flex:1"></div>
+        <span id="e-vip-lbl" style="font-size:11px;color:var(--acc);font-family:'DM Mono',monospace"></span>
+        <span id="e-sel-lbl" style="font-size:11px;color:var(--blu);font-family:'DM Mono',monospace"></span>
+      </div>
+      <div class="esw">
+        <div class="estage" id="estage"
+          ondragover="eDragOver(event)" ondrop="eDropPal(event)"
+          onmousemove="eMouseMove(event)" onmouseup="eMouseUp(event)">
+          <div class="sg"></div><div class="scv"></div><div class="sch"></div>
+          <div class="drop-ghost" id="dg-ghost"></div>
+          <div class="saud" id="e-aud"><span class="saud-lbl">AUDIENCE</span></div>
+        </div>
+      </div>
+      <div style="font-size:9px;color:var(--txt3);text-align:center;font-family:'DM Mono',monospace" id="e-dir-hint">AUDIENCE BELOW</div>
+    </div>
+    <!-- PALETTE -->
+    <div class="epc">
+      <div class="ph">Dancer Palette</div>
+      <div class="pb" id="e-pal"></div>
+      <div class="pps">
+        <h4>VIP for this formation</h4>
+        <select id="e-vip" style="font-size:11px;width:100%;margin-bottom:8px" onchange="eSetVip(this.value)">
+          <option value="">— none —</option>
+        </select>
+        <h4 style="margin-top:6px">Pose — select dancer(s) then set</h4>
+        <div style="font-size:10px;color:var(--txt3);margin-bottom:5px" id="pose-who">Click dancer to select</div>
+        <div style="display:flex;flex-wrap:wrap;gap:3px">
+          <button class="btn btn-sm" id="pb-st" onclick="setPose('stand')" disabled>↑ Stand</button>
+          <button class="btn btn-sm" id="pb-fl" onclick="setPose('floor')" disabled>↓ Floor</button>
+          <button class="btn btn-sm" id="pb-le" onclick="setPose('left')"  disabled>◀ Left</button>
+          <button class="btn btn-sm" id="pb-ri" onclick="setPose('right')" disabled>▶ Right</button>
+          <button class="btn btn-sm" id="pb-no" onclick="setPose('none')"  disabled>∅ None</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="dgh"><div class="dot" id="dgh-dot"></div></div>
+
+<!-- BULK MODAL -->
+<div class="mbg" id="bulk-mb" style="display:none">
+  <div class="modal">
+    <h3>Bulk add dancers</h3>
+    <p class="tm" style="margin-bottom:7px">One name per line.</p>
+    <textarea id="bulk-ta" style="height:130px;resize:vertical" placeholder="Alice&#10;Bob&#10;Charlie…"></textarea>
+    <div class="row mt12">
+      <button class="btn btn-acc f1" onclick="confirmBulk()">Add dancers</button>
+      <button class="btn f1" onclick="closeBulk()">Cancel</button>
+    </div>
+  </div>
+</div>
+
+<!-- JavaScript — load order matters: state first, ui last -->
+<script src="js/state.js"></script>
+<script src="js/dancers.js"></script>
+<script src="js/formations.js"></script>
+<script src="js/editor.js"></script>
+<script src="js/optimizer.js"></script>
+<script src="js/ui.js"></script>
+</body>
+</html>
