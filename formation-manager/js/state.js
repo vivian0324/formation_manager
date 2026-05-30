@@ -28,7 +28,7 @@ const POSE_CLS  = {stand:'p-stand',floor:'p-floor',left:'p-left',right:'p-right'
 // ─── persistence ───────────────────────────────────────
 function autoSave(){
   try{
-    const snap = JSON.parse(JSON.stringify(S));
+    const snap = JSON.parse(JSON.stringify(S, (k,v)=> v instanceof Set ? [...v] : v));
     snap.perfTitle = document.getElementById('perf-title').value;
     snap.defShape  = document.getElementById('def-shape').value;
     localStorage.setItem(STORE_KEY, JSON.stringify(snap));
@@ -46,14 +46,12 @@ function loadSaved(){
     if(!raw) return false;
     const snap = JSON.parse(raw);
     S = snap;
+    // Restore Set from saved array
+    S.vipHardIds = new Set(snap.vipHardIds||[]);
     // restore nid
     let maxId = 0;
     S.dancers.forEach(d=>{ if(d.id>maxId) maxId=d.id; });
     S.formations.forEach(f=>{ if(f.id>maxId) maxId=f.id; });
     nid = maxId + 1;
     if(snap.perfTitle) document.getElementById('perf-title').value = snap.perfTitle;
-    if(snap.defShape)  document.getElementById('def-shape').value  = snap.defShape;
-    return true;
-  }catch(e){ return false; }
-}
-
+    if(sn

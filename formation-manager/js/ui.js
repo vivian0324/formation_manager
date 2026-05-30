@@ -1,6 +1,223 @@
 // ═══════════════════════════════════════════════════════
-// UI — navigation, results render, export, utilities, init
+// UI — navigation, results, export, utilities, init
 // ═══════════════════════════════════════════════════════
+
+);
+    });
+  }
+
+  // Score = DIST_W × dist_to_spot + TRANS_W × dist_from_spot_to_next_formation
+  function candidateScore(p, tx, ty){
+    const d = Math.hypot(p.x - tx, p.y - ty);
+    let t = 0;
+    if(nextPositions){
+      const np = nextPositions.find(q => q.dancerId === p.dancerId);
+      if(np) t = Math.hypot(tx - np.x, ty - np.y);
+    }
+    return DIST_W * d + TRANS_W * t;
+  }
+
+  // Moving-Distance check — applies to both primary and cascade moves.
+  // FAILS (returns false) if ANY of these conditions is met:
+  //   A. Candidate moves toward back of stage vertically > avgRowGap
+  //   B. Candidate moves horizontally > 10 units (2 × grid spacing)
+  //   C. After the move, any row closer to audience than the absent spot
+  //      is no longer bilaterally symmetric (front rows must stay intact)
+  //   D. Horizontal distance from absent spot to candidate's next-formation
+  //      position > 10 units
+  //   E. Vertical distance from absent spot to candidate's next-formation
+  //      position > 2 × avgRowGap
+  function passesDistCheck(p, tx, ty, pos){
+    // Condition A: vertical move toward back of stage (threshold = A × avgRowGap)
+    const thrA = (S.thresholds&&S.thresholds.A!=null ? S.thresholds.A : 1.0) * rowGap;
+    const moveTowardBack = audBot ? (p.y - ty) : (ty - p.y);
+    if(moveTowardBack > thrA) return false;
+
+    // Condition B: horizontal move > B units
+    const thrB = S.thresholds&&S.thresholds.B!=null ? S.thresholds.B : colGap;
+    const moveHoriz = Math.abs(p.x - tx);
+    if(moveHoriz > thrB) return false;
+
+    // Condition C: front rows must stay symmetric after the move
+    const simPos = pos.map(q => q.dancerId === p.dancerId
+      ? {...q, x: tx, y: ty} : {...q}
+    );
+    const frontYs = [...new Set(
+      simPos
+        .filter(q => audBot ? q.y > ty : q.y < ty)
+        .map(q => Math.round(q.y * 2) / 2)
+    )];
+    for(const fy of frontYs){
+      const row = simPos.filter(q => Math.abs(q.y - fy) < THR);
+      const symmetric = row.every(q => {
+        if(Math.abs(q.x - 50) < THR) return true;
+        return row.some(r => r.dancerId !== q.dancerId && Math.abs(r.x - (100 - q.x)) < THR);
+      });
+      if(!symmetric) return false;
+    }
+
+    // Conditions D & E: next-formation position must be close to the absent spot
+    if(nextPositions){
+      const np = nextPositions.find(q => q.dancerId === p.dancerId);
+      if(np){
+        const thrD = S.thresholds&&S.thresholds.D!=null ? S.thresholds.D : colGap;
+        const thrE = (S.thresholds&&S.thresholds.E!=null ? S.thresholds.E : 2.0) * rowGap;
+        // D: horizontal distance from absent spot to next-formation position
+        if(Math.abs(tx - np.x) > thrD) return false;
+        // E: vertical distance from absent spot to next-formation position
+        if(Math.abs(ty - np.y) > thrE) return false;
+      }
+    }
+
+    return true;
+  }
+
+  // Pick best candidate for filling spot (tx, ty).
+  // Excludes hardVipId and excludeIds.
+  // Builds score tiers (within EPS); skipFirst=true → use second tier (Method B).
+  // Tiebreak: dancer furthest from audience (further back = preferred).
+  function pickCandidate(pos, tx, ty, excludeIds, skipFirst){
+    const scored = pos
+      .filter(p => !excludeIds.has(p.dancerId) && p.dancerId !== hardVipId)
+      .map(p => ({ p, score: candidateScore(p, tx, ty) }))
+      .sort((a,b) => a.score - b.score);
+    if(!scored.length) return null;
+    const tiers = [];
+    let ts = 0;
+    for(let i = 1; i <= scored.length; i++){
+      if(i === scored.length || scored[i].score - scored[ts].score >= EPS){
+        tiers.push(scored.slice(ts, i));
+        ts = i;
+      }
+    }
+    const tierIdx = skipFirst ? 1 : 0;
+    if(tierIdx >= tiers.length) return null;
+    const tier = tiers[tierIdx];
+    if(tier.length === 1) return tier[0].p;
+    return tier.sort((a,b) =>
+      distFromAudience(b.p) - distFromAudience(a.p)
+    )[0].p;
+  }
+
+  // ── Core fill routine ─────────────────────────────────────────────────────
+  function runFill(firstFillerId){
+    const pos = positions.map(p => ({...p}));
+    const moved = new Set();
+
+    function applyMove(dancerId, tx, ty){
+      const p = pos.find(q => q.dancerId === dancerId);
+      if(p){ p.x = tx; p.y = ty; moved.add(dancerId); }
+    }
+
+    // Primary fill — Moving-Distance check applies
+    const firstP = pos.find(q => q.dancerId === firstFillerId);
+    if(!firstP || !passesDistCheck(firstP, absentPos[0].x, absentPos[0].y, pos)){
+      // Candidate fails check — optimization done, no moves
+      return { sym: computeSym(pos), movedCount: 0, overLimit: false, pos };
+    }
+    applyMove(firstFillerId, absentPos[0].x, absentPos[0].y);
+
+    // Iterative orphan repair — Moving-Distance check applies here too
+    for(let iter = 0; iter < 20; iter++){
+      if(computeSym(pos) >= SYM_THR) break;
+      if(moved.size > moveLimit) break;
+
+      const orphans = findOrphans(pos);
+      if(!orphans.length) break;
+
+      const jobs = [];
+      for(const o of orphans){
+        const tx = 100 - o.x, ty = o.y;
+        const excl = new Set([...moved, o.dancerId]);
+        const candidate = pickCandidate(pos, tx, ty, excl, false);
+        if(!candidate) continue;
+        if(!passesDistCheck(candidate, tx, ty, pos)) continue; // fails → skip
+        jobs.push({ cost: candidateScore(candidate, tx, ty), tx, ty, filler: candidate });
+      }
+
+      if(!jobs.length) break;
+      jobs.sort((a,b) => a.cost - b.cost);
+      const { filler, tx, ty } = jobs[0];
+      applyMove(filler.dancerId, tx, ty);
+    }
+
+    return {
+      sym: computeSym(pos),
+      movedCount: moved.size,
+      overLimit: moved.size > moveLimit,
+      pos
+    };
+  }
+
+  // ── Step 1: symmetry check ────────────────────────────────────────────────
+  if(computeSym(positions) >= SYM_THR) return positions;
+
+  // ── Step 2: pick primary candidate (Method A = lowest score) ─────────────
+  const absRef = absentPos[0];
+  const fillerA = pickCandidate(positions, absRef.x, absRef.y, new Set(), false);
+  if(!fillerA) return positions;
+  const resultA = runFill(fillerA.dancerId);
+  let best = resultA;
+
+  // ── Method B: if A exceeds move limit, try second-lowest scorer ──────────
+  if(resultA.overLimit){
+    const fillerB = pickCandidate(positions, absRef.x, absRef.y, new Set(), true);
+    if(fillerB){
+      const resultB = runFill(fillerB.dancerId);
+      if(resultB.movedCount < resultA.movedCount ||
+        (resultB.movedCount === resultA.movedCount && resultB.sym > resultA.sym)){
+        best = resultB;
+      }
+    }
+  }
+
+  // Apply best result to positions in-place
+  best.pos.forEach((p, i) => {
+    positions[i].x = p.x;
+    positions[i].y = p.y;
+  });
+  return positions;
+}
+
+// Fix left/right pose symmetry — only if a pair is clearly mismatched (gap > THR).
+function fixPoseSymmetry(positions){
+  const lefties=positions.filter(p=>p.pose==='left');
+  const righties=positions.filter(p=>p.pose==='right');
+  lefties.forEach(lp=>{
+    const mx=100-lp.x, my=lp.y;
+    let best=null, bestD=Infinity;
+    righties.forEach(rp=>{ const d=Math.hypot(rp.x-mx,rp.y-my); if(d<bestD){bestD=d;best=rp;} });
+    if(best&&bestD>14&&bestD<40){ best.x=mx; best.y=my; }
+  });
+  return positions;
+}
+
+function countMoves(optimized, original){
+  // Count how many dancers moved compared to their position in the SAME
+  // formation before optimization (not compared to a previous formation).
+  // Threshold: more than 1 unit = a real move (not just floating point noise).
+  let c=0;
+  optimized.forEach(p=>{
+    const orig=original.find(x=>x.dancerId===p.dancerId);
+    if(orig && Math.hypot(p.x-orig.x, p.y-orig.y) > 1) c++;
+  });
+  return c;
+}
+
+// Single optimisation method: remove absent dancer, close gap with exact mirroring,
+// fix pose symmetry, then place VIP if needed.
+function optimizeFormation(f, prev, nextF){
+  const pos=absFilter(f.positions);
+  const absPts=absentPositions(f);
+  // Pass next formation's positions so closeGap can penalise large transition jumps
+  const nextPositions = nextF ? absFilter(nextF.positions) : null;
+  closeGap(pos, absPts, 'exact', nextPositions, f.id, f.vipDancerId);
+  fixPoseSymmetry(pos);
+  const {positions:pos2,actualVip}=placeVips(pos,f.vipDancerId,f.id);
+  // Count moves vs the ORIGINAL formation positions (not vs previous formation)
+  return{id:f.id,name:f.name,vipDancerId:actualVip,positions:pos2,
+    sym:computeSym(pos2),changes:countMoves(pos2, f.positions)};
+}
 
 // ─── results render ─────────────────────────────────────
 function renderResults(){
@@ -107,10 +324,17 @@ function doExport(){
 }
 
 function resetAll(){
-  if(!confirm('Reset everything? This cannot be undone.')) return;
-  localStorage.removeItem(STORE_KEY);
-  S={dancers:[],absentIds:[],vipIds:[],vipBackups:{},dir:'bot',formations:[],results:[]}; nid=1;
-  renderAll(); showPanel('setup');
+  if(!confirm('Reset to original formations with all dancers active? Absent selections and optimized results will be cleared. Formations and dancers are kept.')) return;
+  // Keep dancers and formations exactly as-is.
+  // Just clear absent, VIP hard constraints, results, and undo history.
+  S.absentIds = [];
+  S.vipHardIds = new Set();
+  S.results = [];
+  Object.keys(eUndoStack).forEach(k => delete eUndoStack[k]);
+  autoSave();
+  renderAll();
+  showPanel('formations');
+  showAlert('Reset to original — all dancers active, formations unchanged.', 'ok');
 }
 
 // ─── bulk ────────────────────────────────────────────────
@@ -139,6 +363,17 @@ function showAlert(msg,type){
 document.addEventListener('keydown',e=>{
   if(e.key==='Enter'&&document.activeElement.id==='nd-name') addDancer();
   if(e.key==='Escape'&&document.getElementById('eo').classList.contains('open')) eClose();
+  // Ctrl+Z (or Cmd+Z on Mac) while NOT in editor — revert last-edited formation
+  if((e.ctrlKey||e.metaKey) && e.key==='z' && !document.getElementById('eo').classList.contains('open')){
+    e.preventDefault();
+    // Find which formation was most recently edited (top of any non-empty undo stack)
+    let bestFid=null, bestLen=0;
+    Object.entries(eUndoStack).forEach(([fid,stack])=>{
+      if(stack.length>bestLen){ bestLen=stack.length; bestFid=parseInt(fid); }
+    });
+    if(bestFid) revertFormation(bestFid);
+    else showAlert('Nothing to revert.','warn');
+  }
 });
 
 // ─── INIT ────────────────────────────────────────────────

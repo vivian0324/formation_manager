@@ -2,49 +2,7 @@
 // FORMATIONS — CRUD, auto-place, stage preview rendering
 // ═══════════════════════════════════════════════════════
 
-// ─── formations ────────────────────────────────────────
-function addFormationCopy(){
-  const last = S.formations[S.formations.length-1];
-  if(!last){ addFormationBlank(); return; }
-  const f = deepClone(last);
-  f.id = uid();
-  f.name = 'Formation '+(S.formations.length+1);
-  S.formations.push(f);
-  renderFormations(); autoSave();
-}
-function addFormationBlank(){
-  const f = {id:uid(), name:'Formation '+(S.formations.length+1), vipDancerId:null, positions:[]};
-  autoPlaceF(f);
-  S.formations.push(f);
-  renderFormations(); autoSave();
-}
-function autoPlaceF(f){
-  const shape = document.getElementById('def-shape').value;
-  const pts = genPts(S.dancers.length, shape);
-  f.positions = pts.map((p,i)=>({x:p.x,y:p.y,dancerId:S.dancers[i].id,pose:'none'}));
-}
-function genPts(n, shape){
-  const pts=[];
-  if(shape==='grid'){
-    const cols=Math.ceil(Math.sqrt(n*1.6)), rows=Math.ceil(n/cols); let i=0;
-    for(let r=0;r<rows&&i<n;r++){
-      const rc=Math.min(cols,n-i), xo=(cols-rc)*.5;
-      for(let c=0;c<rc;c++){ pts.push({x:10+(c+xo)*(80/Math.max(cols-1,1)), y:15+r*(65/Math.max(rows-1,1))}); i++; }
-    }
-  } else if(shape==='arc'){
-    for(let i=0;i<n;i++){ const a=Math.PI*(.15+.7*(i/Math.max(n-1,1))); pts.push({x:50+40*Math.cos(a),y:70-55*Math.sin(a)}); }
-  } else if(shape==='diagonal'){
-    const rows=Math.ceil(n/3); let i=0;
-    for(let r=0;r<rows&&i<n;r++){ const rn=Math.min(3,n-i); for(let c=0;c<rn;c++){ pts.push({x:15+r*18+c*22,y:20+r*22-c*10}); i++; } }
-  } else {
-    for(let i=0;i<n;i++) pts.push({x:10+((i*37+13)%80),y:10+((i*53+7)%70)});
-  }
-  return pts;
-}
-function removeFormation(id){ S.formations=S.formations.filter(f=>f.id!==id); renderFormations(); autoSave(); }
-function renameF(id,v){ const f=S.formations.find(x=>x.id===id); if(f){ f.name=v; autoSave(); } }
-function shuffleF(id){
-  const f=S.formations.find(x=>x.id===id); if(!f) return;
+.find(x=>x.id===id); if(!f) return;
   const shape=document.getElementById('def-shape').value;
   const ex=new Map(f.positions.map(p=>[p.dancerId,p.pose]));
   const sh=[...S.dancers].sort(()=>Math.random()-.5);
@@ -58,25 +16,52 @@ function poseSummary(pos){
   return Object.entries(c).filter(([,v])=>v>0).map(([k,v])=>POSE_ICON[k]+'×'+v).join(' ');
 }
 
+function moveFormationUp(id){
+  const idx=S.formations.findIndex(x=>x.id===id);
+  if(idx<=0) return;
+  [S.formations[idx-1],S.formations[idx]]=[S.formations[idx],S.formations[idx-1]];
+  renderFormations(); autoSave();
+}
+function moveFormationDown(id){
+  const idx=S.formations.findIndex(x=>x.id===id);
+  if(idx<0||idx>=S.formations.length-1) return;
+  [S.formations[idx],S.formations[idx+1]]=[S.formations[idx+1],S.formations[idx]];
+  renderFormations(); autoSave();
+}
+function insertFormationBefore(targetId){
+  const targetIdx=S.formations.findIndex(x=>x.id===targetId);
+  if(targetIdx<0) return;
+  const src=targetIdx>0?S.formations[targetIdx-1]:S.formations[0];
+  const f=deepClone(src); f.id=uid(); f.name='Formation '+(targetIdx+1);
+  S.formations.splice(targetIdx,0,f);
+  renderFormations(); autoSave();
+  showAlert('Inserted before formation '+(targetIdx+2),'ok');
+}
+
 function renderFormations(){
-  const cont = document.getElementById('f-list');
+  const cont=document.getElementById('f-list');
   cont.innerHTML='';
   if(!S.formations.length){
     cont.innerHTML='<div class="empty"><div class="ico">⬡</div><h3>No formations yet</h3><p>Click "+ Add" above</p></div>'; return;
   }
+  const n=S.formations.length;
   S.formations.forEach((f,idx)=>{
     const card=el('div','fc');
     const vd=f.vipDancerId?S.dancers.find(d=>d.id===f.vipDancerId):null;
-    // header
     const hdr=el('div','fc-hdr');
+    const isHard = S.vipHardIds.has(f.id);
     hdr.innerHTML='<span class="fidx mono">'+String(idx+1).padStart(2,'0')+'</span>'
       +'<input type="text" value="'+esc(f.name)+'" style="background:transparent;border:none;color:var(--txt);font-size:13px;font-weight:500;padding:0;flex:1" oninput="renameF('+f.id+',this.value)">'
       +(vd?'<span class="badge badge-vip">'+esc(vd.name)+' VIP</span>':'')
+      +'<button class="btn btn-sm'+(isHard?' btn-acc':'')+'" onclick="toggleVipHard('+f.id+')" title="'+(isHard?'VIP frozen — click to make soft':'VIP may move — click to freeze')+'">'+(isHard?'🔒':'🔓')+'</button>'
+      +'<button class="btn btn-sm" onclick="moveFormationUp('+f.id+')" title="Move up" '+(idx===0?'disabled':'')+'>↑</button>'
+      +'<button class="btn btn-sm" onclick="moveFormationDown('+f.id+')" title="Move down" '+(idx===n-1?'disabled':'')+'>↓</button>'
+      +'<button class="btn btn-sm" onclick="insertFormationBefore('+f.id+')" title="Insert copy before this">＋↑</button>'
       +'<button class="btn btn-sm btn-acc" onclick="openEditor('+f.id+')">✏ Edit</button>'
       +'<button class="btn btn-sm" onclick="shuffleF('+f.id+')" title="Shuffle">↻</button>'
+      +'<button class="btn btn-sm" onclick="revertFormation('+f.id+')" title="Revert to previous save (Ctrl+Z)">↩</button>'
       +'<button class="btn btn-sm btn-red" onclick="removeFormation('+f.id+')">×</button>';
     card.appendChild(hdr);
-    // body
     const body=el('div','fc-body');
     const sw=el('div','sw');
     sw.innerHTML='<div class="slbl">STAGE '+(S.dir==='bot'?'↑':'↓')+' AUDIENCE</div>';
@@ -91,7 +76,7 @@ function renderFormations(){
     body.appendChild(fm);
     card.appendChild(body);
     cont.appendChild(card);
-    if(idx<S.formations.length-1){
+    if(idx<n-1){
       const tr=el('div','trbar');
       tr.innerHTML='<div class="trline"></div><div class="trlbl">↓ transition</div><div class="trline"></div>';
       cont.appendChild(tr);
@@ -127,3 +112,8 @@ function makeStage(f, editable){
   return stage;
 }
 
+// ═══════════════════════════════════════════════════════
+// EDITOR
+// ═══════════════════════════════════════════════════════
+let eFormId=null, ePts=[], eDrag=null, eSelected=new Set();
+// Undo history: {fid, posit

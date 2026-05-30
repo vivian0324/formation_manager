@@ -1,6 +1,11 @@
 // ═══════════════════════════════════════════════════════
-// DANCERS — add/remove/toggle absent/VIP, sidebar render
+// DANCERS — add/remove/toggle absent, sidebar rendering
 // ═══════════════════════════════════════════════════════
+
+ap.defShape)  document.getElementById('def-shape').value  = snap.defShape;
+    return true;
+  }catch(e){ return false; }
+}
 
 // ─── dancers ───────────────────────────────────────────
 function addDancer(name){
@@ -60,75 +65,79 @@ function renderSidebar(){
       (isAbs?'<span class="badge badge-abs">ABS</span>':'')+
       (isVip?'<span class="badge badge-vip">VIP</span>':'')+
       '<button class="btn btn-sm" onclick="event.stopPropagation();removeDancer('+d.id+')" style="color:var(--txt3);padding:0 4px">×</button>';
-    chip.onclick = ()=>{ if(isAbs) toggleAbsent(d.id); else if(isVip) toggleVip(d.id); else showDancerMenu(d.id); };
+    chip.onclick = ()=>toggleAbsent(d.id);
     dl.appendChild(chip);
   });
-  // absent multi-select
-  const al = document.getElementById('abs-list');
-  al.innerHTML = '';
-  S.dancers.forEach(d=>{
-    const chk = S.absentIds.includes(d.id);
-    const it = document.createElement('div');
-    it.className = 'ms-item'+(chk?' checked':'');
-    it.innerHTML = av(d)+'<span style="flex:1">'+esc(d.name)+'</span>'+(chk?'✓':'');
-    it.onclick = ()=>toggleAbsent(d.id);
-    al.appendChild(it);
-  });
-  // vip multi-select
-  const vl = document.getElementById('vip-list');
-  vl.innerHTML = '';
-  S.dancers.forEach(d=>{
-    const chk = S.vipIds.includes(d.id);
-    const it = document.createElement('div');
-    it.className = 'ms-item'+(chk?' checked':'');
-    it.innerHTML = av(d)+'<span style="flex:1">'+esc(d.name)+'</span>'+(chk?'✓':'');
-    it.onclick = ()=>toggleVip(d.id);
-    vl.appendChild(it);
-  });
-  // vip backup
-  const bsec = document.getElementById('vip-backup-section');
-  const blist = document.getElementById('vip-backups');
-  if(S.vipIds.length>0){
-    bsec.style.display='block';
-    blist.innerHTML='';
-    S.vipIds.forEach(vid=>{
-      const vd = S.dancers.find(d=>d.id===vid);
-      if(!vd) return;
-      const row = document.createElement('div');
-      row.style.marginBottom='6px';
-      row.innerHTML='<div style="font-size:11px;color:var(--txt2);margin-bottom:3px">Backup for <strong>'+esc(vd.name)+'</strong>:</div>';
-      const backs = S.vipBackups[vid]||[];
-      for(let i=0;i<3;i++){
-        const sel = document.createElement('select');
-        sel.style.cssText='font-size:11px;margin-bottom:3px;width:100%';
-        sel.innerHTML='<option value="">— slot '+(i+1)+' —</option>';
-        S.dancers.filter(d=>d.id!==vid&&!S.vipIds.includes(d.id)).forEach(d=>{
-          sel.innerHTML+='<option value="'+d.id+'"'+(backs[i]===d.id?' selected':'')+'>'+esc(d.name)+'</option>';
-        });
-        sel.onchange=((vi,idx)=>function(){
-          if(!S.vipBackups[vi]) S.vipBackups[vi]=[];
-          S.vipBackups[vi][idx]=parseInt(this.value)||null;
-          autoSave();
-        })(vid,i);
-        row.appendChild(sel);
-      }
-      blist.appendChild(row);
-    });
-  } else { bsec.style.display='none'; }
+  // vip hard button
   // direction buttons
   document.getElementById('btn-bot').className='btn btn-sm f1'+(S.dir==='bot'?' btn-acc':'');
   document.getElementById('btn-top').className='btn btn-sm f1'+(S.dir==='top'?' btn-acc':'');
 }
 function showDancerMenu(id){
-  // simple cycle: absent → vip → none
-  const d = S.dancers.find(x=>x.id===id);
-  if(!d) return;
-  // just open a tiny modal
-  const isAbs=S.absentIds.includes(id), isVip=S.vipIds.includes(id);
-  if(!isAbs&&!isVip){ toggleAbsent(id); }
-  else if(isAbs){ toggleAbsent(id); toggleVip(id); }
-  else { toggleVip(id); }
+  toggleAbsent(id);
 }
 
 function setDir(d){ S.dir=d; renderSidebar(); renderFormations(); autoSave(); }
+function updateThreshold(key, val){
+  if(isNaN(val)||val<=0) return;
+  if(!S.thresholds) S.thresholds={A:1.0,B:10,D:10,E:2.0};
+  S.thresholds[key]=val;
+  autoSave();
+}
+function syncThresholdInputs(){
+  if(!S.thresholds) S.thresholds={A:1.0,B:10,D:10,E:2.0};
+  ['A','B','D','E'].forEach(k=>{
+    const el=document.getElementById('thr-'+k);
+    if(el) el.value=S.thresholds[k];
+  });
+}
 
+function toggleVipHard(fid){
+  if(S.vipHardIds.has(fid)) S.vipHardIds.delete(fid);
+  else S.vipHardIds.add(fid);
+  renderFormations(); autoSave();
+}
+
+// ─── formations ────────────────────────────────────────
+function addFormationCopy(){
+  const last = S.formations[S.formations.length-1];
+  if(!last){ addFormationBlank(); return; }
+  const f = deepClone(last);
+  f.id = uid();
+  f.name = 'Formation '+(S.formations.length+1);
+  S.formations.push(f);
+  renderFormations(); autoSave();
+}
+function addFormationBlank(){
+  const f = {id:uid(), name:'Formation '+(S.formations.length+1), vipDancerId:null, positions:[]};
+  autoPlaceF(f);
+  S.formations.push(f);
+  renderFormations(); autoSave();
+}
+function autoPlaceF(f){
+  const shape = document.getElementById('def-shape').value;
+  const pts = genPts(S.dancers.length, shape);
+  f.positions = pts.map((p,i)=>({x:p.x,y:p.y,dancerId:S.dancers[i].id,pose:'none'}));
+}
+function genPts(n, shape){
+  const pts=[];
+  if(shape==='grid'){
+    const cols=Math.ceil(Math.sqrt(n*1.6)), rows=Math.ceil(n/cols); let i=0;
+    for(let r=0;r<rows&&i<n;r++){
+      const rc=Math.min(cols,n-i), xo=(cols-rc)*.5;
+      for(let c=0;c<rc;c++){ pts.push({x:10+(c+xo)*(80/Math.max(cols-1,1)), y:15+r*(65/Math.max(rows-1,1))}); i++; }
+    }
+  } else if(shape==='arc'){
+    for(let i=0;i<n;i++){ const a=Math.PI*(.15+.7*(i/Math.max(n-1,1))); pts.push({x:50+40*Math.cos(a),y:70-55*Math.sin(a)}); }
+  } else if(shape==='diagonal'){
+    const rows=Math.ceil(n/3); let i=0;
+    for(let r=0;r<rows&&i<n;r++){ const rn=Math.min(3,n-i); for(let c=0;c<rn;c++){ pts.push({x:15+r*18+c*22,y:20+r*22-c*10}); i++; } }
+  } else {
+    for(let i=0;i<n;i++) pts.push({x:10+((i*37+13)%80),y:10+((i*53+7)%70)});
+  }
+  return pts;
+}
+function removeFormation(id){ S.formations=S.formations.filter(f=>f.id!==id); renderFormations(); autoSave(); }
+function renameF(id,v){ const f=S.formations.find(x=>x.id===id); if(f){ f.name=v; autoSave(); } }
+function shuffleF(id){
+  const f=S.formations

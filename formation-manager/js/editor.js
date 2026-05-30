@@ -2,10 +2,8 @@
 // EDITOR — full-screen drag-and-drop stage editor
 // ═══════════════════════════════════════════════════════
 
-// ═══════════════════════════════════════════════════════
-// EDITOR
-// ═══════════════════════════════════════════════════════
-let eFormId=null, ePts=[], eDrag=null, eSelected=new Set();
+ions, vipDancerId} snapshots saved before each editor save
+const eUndoStack = {}; // keyed by formation id, stores array of snapshots
 
 function openEditor(fid){
   const f=S.formations.find(x=>x.id===fid); if(!f) return;
@@ -27,9 +25,28 @@ function openEditor(fid){
 function eClose(){ document.getElementById('eo').classList.remove('open'); eFormId=null; eDrag=null; eSelected=new Set(); }
 function eSave(){
   const f=S.formations.find(x=>x.id===eFormId); if(!f) return;
+  // Snapshot current state BEFORE overwriting (enables Ctrl+Z revert)
+  if(!eUndoStack[eFormId]) eUndoStack[eFormId]=[];
+  eUndoStack[eFormId].push({
+    positions: deepClone(f.positions),
+    vipDancerId: f.vipDancerId
+  });
+  // Keep at most 20 undo steps per formation
+  if(eUndoStack[eFormId].length > 20) eUndoStack[eFormId].shift();
   f.positions=deepClone(ePts);
   f.vipDancerId=parseInt(document.getElementById('e-vip').value)||null;
-  eClose(); renderFormations(); autoSave(); showAlert('Formation saved!','ok');
+  eClose(); renderFormations(); autoSave(); showAlert('Formation saved! (Ctrl+Z to revert)','ok');
+}
+
+function revertFormation(fid){
+  const stack = eUndoStack[fid];
+  if(!stack||!stack.length){ showAlert('No saved history to revert to.','warn'); return; }
+  const snap = stack.pop();
+  const f = S.formations.find(x=>x.id===fid); if(!f) return;
+  f.positions = deepClone(snap.positions);
+  f.vipDancerId = snap.vipDancerId;
+  renderFormations(); autoSave();
+  showAlert('Reverted to previous save'+(stack.length?' ('+stack.length+' more)':'')+'','ok');
 }
 function eSetVip(val,re=true){
   const d=val?S.dancers.find(x=>x.id===parseInt(val)):null;
@@ -267,24 +284,4 @@ document.addEventListener('pointerup',ev=>{
   const rect=stage.getBoundingClientRect();
   if(ev.clientX<rect.left||ev.clientX>rect.right||ev.clientY<rect.top||ev.clientY>rect.bottom){
     if(eDrag.wrapEl) eDrag.wrapEl.classList.remove('dragging');
-    eDrag=null; dragMulti=[];
-    document.getElementById('dgh').style.display='none';
-    document.getElementById('dg-ghost').style.display='none';
-  }
-});
-function toPct(cx,cy,rect){
-  const x=((cx-rect.left)/rect.width)*100, y=((cy-rect.top)/rect.height)*100;
-  if(x<0||x>100||y<0||y>97) return null;
-  return{x,y};
-}
-function snp(x,y){
-  if(document.getElementById('snap-chk').checked){
-    // Snap to nearest 2.5% — places dot centre exactly ON a gridline
-    // (0, 5, 10...) or exactly HALFWAY between two gridlines (2.5, 7.5, 12.5...).
-    // Either way the dot centre aligns perfectly with the grid.
-    return{x:Math.round(x/2.5)*2.5, y:Math.round(y/2.5)*2.5};
-  }
-  // Free mode: still round to 0.1 for clean storage
-  return{x:Math.round(x*10)/10, y:Math.round(y*10)/10};
-}
-
+    eDrag=null; dragMulti=[

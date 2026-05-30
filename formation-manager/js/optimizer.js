@@ -1,12 +1,27 @@
 // ═══════════════════════════════════════════════════════
 // OPTIMIZER — formation optimization engine
-//
-// Key functions:
-//   computeSym(positions)         — bilateral symmetry score (0–1)
-//   closeGap(positions, absentPos) — move nearest non-orphan to fill gap
-//   optimizeFormation(f, prev)    — full optimization for one formation
-//   runOptimize()                 — run across all formations
 // ═══════════════════════════════════════════════════════
+
+];
+    document.getElementById('dgh').style.display='none';
+    document.getElementById('dg-ghost').style.display='none';
+  }
+});
+function toPct(cx,cy,rect){
+  const x=((cx-rect.left)/rect.width)*100, y=((cy-rect.top)/rect.height)*100;
+  if(x<0||x>100||y<0||y>97) return null;
+  return{x,y};
+}
+function snp(x,y){
+  if(document.getElementById('snap-chk').checked){
+    // Snap to nearest 2.5% — places dot centre exactly ON a gridline
+    // (0, 5, 10...) or exactly HALFWAY between two gridlines (2.5, 7.5, 12.5...).
+    // Either way the dot centre aligns perfectly with the grid.
+    return{x:Math.round(x/2.5)*2.5, y:Math.round(y/2.5)*2.5};
+  }
+  // Free mode: still round to 0.1 for clean storage
+  return{x:Math.round(x*10)/10, y:Math.round(y*10)/10};
+}
 
 // ═══════════════════════════════════════════════════════
 // SYMMETRY
@@ -69,7 +84,11 @@ function runOptimize(){
   if(!S.absentIds.length){ showAlert('Mark at least one absent dancer first.','warn'); return; }
   const fms=[], label='Optimized — absent dancer removed, neighbours mirror to centre';
   let prev=null;
-  S.formations.forEach(f=>{ const r=optimizeFormation(f,prev); fms.push(r); prev=r; });
+  S.formations.forEach((f,i)=>{
+    const nextF = i+1 < S.formations.length ? S.formations[i+1] : null;
+    const r=optimizeFormation(f, prev, nextF);
+    fms.push(r); prev=r;
+  });
   S.results=[{label, formations:fms}];
   showPanel('results'); renderResults(); autoSave();
 }
@@ -91,11 +110,14 @@ function importanceScore(p){
   return Math.abs(p.x-50)+(audBot?(100-p.y)*.6:p.y*.6);
 }
 
-// Place VIP into a prominent position only if they are currently ranked poorly.
-// Swaps the VIP with the best available slot. Leaves everyone else untouched.
-function placeVips(positions, vipDancerId){
+// Place VIP into a prominent position.
+// Hard mode (S.vipHard=true): VIP stays exactly where they are — no swap at all.
+// Soft mode: if VIP is not in top-3 prominent spots, swap them to the best spot.
+function placeVips(positions, vipDancerId, fid){
   const effectiveVip=resolveVip(vipDancerId);
   if(!effectiveVip) return{positions,actualVip:null};
+  const isHard = S.vipHardIds && S.vipHardIds.has(fid);
+  if(isHard) return{positions,actualVip:effectiveVip}; // frozen — no swap
   const ranked=[...positions].map((p,i)=>({i,score:importanceScore(p)})).sort((a,b)=>a.score-b.score);
   const vipIdx=positions.findIndex(p=>p.dancerId===effectiveVip);
   if(vipIdx<0) return{positions,actualVip:effectiveVip};
@@ -126,91 +148,53 @@ function absentPositions(f){
 // mode: 'tight'  — place the 2 nearest tight at center (x=42, x=58)
 //       'half'   — each nearest dancer moves 55% of the way toward absent dancer's x
 //       'exact'  — nearest dancer fills absent spot; second goes to its bilateral mirror
-function closeGap(positions, absentPos, mode){
+function closeGap(positions, absentPos, mode, nextPositions, fid, formVipId){
   if(!absentPos || !absentPos.length) return positions;
 
-  // Find orphaned dancers — those with no bilateral mirror partner (THR=1%).
-  const THR = 1;
-  const orphans = positions.filter(p => {
-    if(Math.abs(p.x - 50) < THR) return false; // on centre line
-    const mx = 100 - p.x, my = p.y;
-    return !positions.some(q =>
-      q.dancerId !== p.dancerId &&
-      Math.abs(q.x - mx) < THR &&
-      Math.abs(q.y - my) < THR
-    );
-  });
+  // ── Constants ─────────────────────────────────────────────────────────────
+  const THR     = 1;    // bilateral mirror threshold (% of stage width)
+  const SYM_THR = 0.99; // "symmetric enough" — no action above this
+  const DIST_W  = 1.0;  // weight: distance to fill spot (primary)
+  const TRANS_W = 0.4;  // weight: transition to next formation (secondary)
+  const EPS     = 0.5;  // score tie threshold
+  const MOVE_LIMIT_RATIO = 0.30; // max 30% of active dancers may move
 
-  if(!orphans.length) return positions; // already symmetric — nobody moves
+  // Moving-Distance thresholds:
+  //   rowGap = average vertical distance between rows in this formation
+  //   colGap = 10 units (= 2 × 5-unit grid spacing between neighbouring columns)
+  const rowYs = [...new Set(positions.map(p => Math.round(p.y * 2) / 2))].sort((a,b)=>a-b);
+  const rowGap = rowYs.length > 1
+    ? (rowYs[rowYs.length-1] - rowYs[0]) / (rowYs.length - 1) : 10;
+  const colGap = 10; // 2 × width between 2 neighbouring vertical gridlines
 
-  // Sort orphans by distance to absent dancer's position.
-  const absRef = absentPos[0];
-  orphans.sort((a,b) =>
-    Math.hypot(a.x-absRef.x, a.y-absRef.y) -
-    Math.hypot(b.x-absRef.x, b.y-absRef.y)
-  );
+  // Hard-constrained VIP — cannot be moved at all
+  const isFormHard = S.vipHardIds && S.vipHardIds.has(fid);
+  const hardVipId  = (isFormHard && formVipId && !S.absentIds.includes(formVipId))
+    ? formVipId : null;
 
-  // Primary orphan: the one closest to the absent dancer's spot.
-  const orphan = orphans[0];
-  const op = positions.find(q => q.dancerId === orphan.dancerId);
-  if(!op) return positions;
+  const audBot    = S.dir === 'bot';
+  const moveLimit = Math.max(1, Math.floor(positions.length * MOVE_LIMIT_RATIO));
 
-  // Find the nearest non-orphan dancer to the orphan.
-  // This is the dancer who will move to fill the absent dancer's spot.
-  const nonOrphans = positions.filter(p =>
-    !orphans.some(o => o.dancerId === p.dancerId)
-  );
-  const nearest = [...nonOrphans].sort((a,b) =>
-    Math.hypot(a.x-op.x, a.y-op.y) - Math.hypot(b.x-op.x, b.y-op.y)
-  )[0];
-  const np = nearest ? positions.find(q => q.dancerId === nearest.dancerId) : null;
-
-  // Move the nearest non-orphan to the absent dancer's exact original position.
-  // This restores the bilateral mirror: orphan stays, partner fills the gap.
-  // e.g. Kristen gone at (40,40): Rachel moves to (40,40), wqy stays at (60,40).
-  if(np){
-    np.x = absRef.x;
-    np.y = absRef.y;
+  // ── Helpers ───────────────────────────────────────────────────────────────
+  function distFromAudience(p){
+    return audBot ? p.y : (100 - p.y); // higher = further from audience
   }
 
-  return positions;
-}
+  function computeSym(pos){
+    if(!pos.length) return 0;
+    let n = 0;
+    pos.forEach(p => {
+      if(Math.abs(p.x - 50) < THR){ n++; return; }
+      const mx = 100 - p.x, my = p.y;
+      if(pos.some(q => q.dancerId !== p.dancerId &&
+          Math.abs(q.x - mx) < THR && Math.abs(q.y - my) < THR)) n++;
+    });
+    return n / pos.length;
+  }
 
-// Fix left/right pose symmetry — only if a pair is clearly mismatched (gap > THR).
-function fixPoseSymmetry(positions){
-  const lefties=positions.filter(p=>p.pose==='left');
-  const righties=positions.filter(p=>p.pose==='right');
-  lefties.forEach(lp=>{
-    const mx=100-lp.x, my=lp.y;
-    let best=null, bestD=Infinity;
-    righties.forEach(rp=>{ const d=Math.hypot(rp.x-mx,rp.y-my); if(d<bestD){bestD=d;best=rp;} });
-    if(best&&bestD>14&&bestD<40){ best.x=mx; best.y=my; }
-  });
-  return positions;
-}
-
-function countMoves(optimized, original){
-  // Count how many dancers moved compared to their position in the SAME
-  // formation before optimization (not compared to a previous formation).
-  // Threshold: more than 1 unit = a real move (not just floating point noise).
-  let c=0;
-  optimized.forEach(p=>{
-    const orig=original.find(x=>x.dancerId===p.dancerId);
-    if(orig && Math.hypot(p.x-orig.x, p.y-orig.y) > 1) c++;
-  });
-  return c;
-}
-
-// Single optimisation method: remove absent dancer, close gap with exact mirroring,
-// fix pose symmetry, then place VIP if needed.
-function optimizeFormation(f, prev){
-  const pos=absFilter(f.positions);
-  const absPts=absentPositions(f);
-  closeGap(pos, absPts, 'exact');
-  fixPoseSymmetry(pos);
-  const {positions:pos2,actualVip}=placeVips(pos,f.vipDancerId);
-  // Count moves vs the ORIGINAL formation positions (not vs previous formation)
-  return{id:f.id,name:f.name,vipDancerId:actualVip,positions:pos2,
-    sym:computeSym(pos2),changes:countMoves(pos2, f.positions)};
-}
-
+  function findOrphans(pos){
+    return pos.filter(p => {
+      if(Math.abs(p.x - 50) < THR) return false;
+      const mx = 100 - p.x, my = p.y;
+      return !pos.some(q => q.dancerId !== p.dancerId &&
+        Math.abs(q.x - mx) < THR && Math.abs(q.y - my) < THR
