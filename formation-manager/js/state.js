@@ -1,12 +1,13 @@
-// ═══════════════════════════════════════════════════════
-// STATE — global data model, constants, persistence
-// ═══════════════════════════════════════════════════════
+// STATE
 
 
 // ═══════════════════════════════════════════════════════
 // STATE
 // ═══════════════════════════════════════════════════════
 const STORE_KEY = 'fm_v3_state';
+const SLOTS_KEY='fm_v3_slots';
+function loadSlots(){ try{ return JSON.parse(localStorage.getItem(SLOTS_KEY))||{}; }catch(e){ return {}; } }
+function saveSlots(slots){ localStorage.setItem(SLOTS_KEY, JSON.stringify(slots)); }
 let S = {
   dancers: [],       // {id,name,color}
   absentIds: [],     // ids
@@ -50,8 +51,4 @@ function loadSaved(){
     S.vipHardIds = new Set(snap.vipHardIds||[]);
     // restore nid
     let maxId = 0;
-    S.dancers.forEach(d=>{ if(d.id>maxId) maxId=d.id; });
-    S.formations.forEach(f=>{ if(f.id>maxId) maxId=f.id; });
-    nid = maxId + 1;
-    if(snap.perfTitle) document.getElementById('perf-title').value = snap.perfTitle;
-    if(sn
+    S.dan

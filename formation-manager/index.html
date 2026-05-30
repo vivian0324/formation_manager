@@ -213,27 +213,34 @@ button:disabled{opacity:.35;cursor:not-allowed}
         <div style="color:var(--txt3);margin-bottom:2px">A — back-of-stage (× row gap)</div>
         <input type="number" id="thr-A" min="0.1" max="5" step="0.1" value="1.0"
           style="width:100%;background:var(--surf3);border:1px solid var(--bdr2);color:var(--txt);border-radius:var(--r);padding:3px 6px;font-size:11px"
-          oninput="updateThreshold('A',parseFloat(this.value))">
+          oninput="updateThreshold('A',this.value===''?NaN:parseFloat(this.value))">
       </div>
       <div>
         <div style="color:var(--txt3);margin-bottom:2px">B — horizontal (units)</div>
         <input type="number" id="thr-B" min="1" max="50" step="0.5" value="10"
           style="width:100%;background:var(--surf3);border:1px solid var(--bdr2);color:var(--txt);border-radius:var(--r);padding:3px 6px;font-size:11px"
-          oninput="updateThreshold('B',parseFloat(this.value))">
+          oninput="updateThreshold('B',this.value===''?NaN:parseFloat(this.value))">
       </div>
       <div>
-        <div style="color:var(--txt3);margin-bottom:2px">D — next-formation horiz (units)</div>
+        <div style="color:var(--txt3);margin-bottom:2px">C — next-formation horiz (units)</div>
         <input type="number" id="thr-D" min="1" max="50" step="0.5" value="10"
           style="width:100%;background:var(--surf3);border:1px solid var(--bdr2);color:var(--txt);border-radius:var(--r);padding:3px 6px;font-size:11px"
-          oninput="updateThreshold('D',parseFloat(this.value))">
+          oninput="updateThreshold('D',this.value===''?NaN:parseFloat(this.value))">
       </div>
       <div>
-        <div style="color:var(--txt3);margin-bottom:2px">E — next-formation vert (× row gap)</div>
+        <div style="color:var(--txt3);margin-bottom:2px">D — next-formation vert (× row gap)</div>
         <input type="number" id="thr-E" min="0.1" max="10" step="0.1" value="2.0"
           style="width:100%;background:var(--surf3);border:1px solid var(--bdr2);color:var(--txt);border-radius:var(--r);padding:3px 6px;font-size:11px"
-          oninput="updateThreshold('E',parseFloat(this.value))">
+          oninput="updateThreshold('E',this.value===''?NaN:parseFloat(this.value))">
       </div>
     </div>
+    <div style="margin-top:8px;font-size:11px">
+      <div style="color:var(--txt3);margin-bottom:2px">Max dancers moved per formation (%)</div>
+      <input type="number" id="thr-moveLimit" min="1" max="100" step="1" value="30"
+        style="width:100%;background:var(--surf3);border:1px solid var(--bdr2);color:var(--txt);border-radius:var(--r);padding:3px 6px;font-size:11px"
+        oninput="updateThreshold('moveLimit',this.value===''?NaN:parseFloat(this.value))">
+    </div>
+    <button class="btn btn-sm" style="width:100%;margin-top:8px" onclick="resetThresholds()">↺ Reset to defaults</button>
   </div>
   <div class="sbs">
     <h3>Stage direction</h3>
@@ -242,6 +249,21 @@ button:disabled{opacity:.35;cursor:not-allowed}
     </div>
     <div class="row" style="margin-top:4px">
       <button class="btn btn-sm f1" id="btn-top" onclick="setDir('top')" style="justify-content:center">↓ Audience top</button>
+    </div>
+  </div>
+  <div class="sbs">
+    <h3>Choreographies</h3>
+    <div style="display:flex;gap:5px;margin-bottom:6px">
+      <input id="slot-name" type="text" placeholder="Name this choreography…"
+        style="flex:1;background:var(--surf3);border:1px solid var(--bdr2);color:var(--txt);border-radius:var(--r);padding:3px 7px;font-size:11px">
+      <button class="btn btn-sm btn-acc" onclick="saveSlot()">Save</button>
+    </div>
+    <div id="slot-list" style="max-height:140px;overflow-y:auto;display:flex;flex-direction:column;gap:4px"></div>
+    <div style="display:flex;gap:5px;margin-top:7px">
+      <button class="btn btn-sm" style="flex:1" onclick="exportJSON()">↓ Export JSON</button>
+      <label class="btn btn-sm" style="flex:1;cursor:pointer;text-align:center">↑ Import JSON
+        <input type="file" accept=".json" style="display:none" onchange="importJSON(event)">
+      </label>
     </div>
   </div>
   <div class="sbs">
@@ -420,6 +442,9 @@ button:disabled{opacity:.35;cursor:not-allowed}
 // STATE
 // ═══════════════════════════════════════════════════════
 const STORE_KEY = 'fm_v3_state';
+const SLOTS_KEY='fm_v3_slots';
+function loadSlots(){ try{ return JSON.parse(localStorage.getItem(SLOTS_KEY))||{}; }catch(e){ return {}; } }
+function saveSlots(slots){ localStorage.setItem(SLOTS_KEY, JSON.stringify(slots)); }
 let S = {
   dancers: [],       // {id,name,color}
   absentIds: [],     // ids
@@ -542,18 +567,128 @@ function showDancerMenu(id){
   toggleAbsent(id);
 }
 
+// ── Choreography slots ────────────────────────────────────────────────────
+function saveSlot(){
+  const name=document.getElementById('slot-name').value.trim();
+  if(!name){ showAlert('Enter a name first.','warn'); return; }
+  const slots=loadSlots();
+  const snap=JSON.parse(JSON.stringify(S,(k,v)=>v instanceof Set?[...v]:v));
+  snap._savedAt=new Date().toLocaleString();
+  slots[name]=snap; saveSlots(slots);
+  document.getElementById('slot-name').value='';
+  renderSlots(); showAlert('Saved: '+name,'ok');
+}
+function loadSlot(name){
+  if(!confirm('Load "'+name+'"? Unsaved changes will be lost.')) return;
+  const slots=loadSlots(); const snap=slots[name];
+  if(!snap){ showAlert('Not found.','warn'); return; }
+  S=snap; S.vipHardIds=new Set(snap.vipHardIds||[]);
+  if(!S.thresholds) S.thresholds={A:1.0,B:10,D:10,E:2.0,moveLimit:30};
+  autoSave(); renderAll(); syncThresholdInputs(); renderSlots();
+  showPanel(S.formations.length?'formations':'setup');
+  showAlert('Loaded: '+name,'ok');
+}
+function deleteSlot(name){
+  if(!confirm('Delete "'+name+'"?')) return;
+  const slots=loadSlots(); delete slots[name]; saveSlots(slots);
+  renderSlots(); showAlert('Deleted: '+name,'ok');
+}
+function renderSlots(){
+  const cont=document.getElementById('slot-list'); if(!cont) return;
+  const slots=loadSlots(); const names=Object.keys(slots);
+  if(!names.length){
+    cont.innerHTML='<div class="tm" style="font-size:10px;color:var(--txt3)">No saved choreographies yet.</div>';
+    return;
+  }
+  cont.innerHTML='';
+  names.forEach(name=>{
+    const row=document.createElement('div');
+    row.style.cssText='display:flex;align-items:center;gap:4px;font-size:11px';
+    const info=document.createElement('div'); info.style.flex='1';
+    info.style.overflow='hidden';
+    info.innerHTML='<div style="font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(name)+'</div>'
+      +'<div style="font-size:9px;color:var(--txt3)">'+esc(slots[name]._savedAt||'')+'</div>';
+    const lb=document.createElement('button'); lb.className='btn btn-sm btn-acc'; lb.textContent='Load';
+    lb.onclick=()=>loadSlot(name);
+    const db=document.createElement('button'); db.className='btn btn-sm btn-red'; db.textContent='×';
+    db.onclick=()=>deleteSlot(name);
+    row.appendChild(info); row.appendChild(lb); row.appendChild(db); cont.appendChild(row);
+  });
+}
+function exportJSON(){
+  const snap=JSON.parse(JSON.stringify(S,(k,v)=>v instanceof Set?[...v]:v));
+  snap._exportedAt=new Date().toLocaleString();
+  const blob=new Blob([JSON.stringify(snap,null,2)],{type:'application/json'});
+  const url=URL.createObjectURL(blob);
+  const a=document.createElement('a');
+  // Use the choreography name from the slot-name input if filled,
+  // otherwise fall back to the first formation name, then 'choreography'
+  const slotInput = document.getElementById('slot-name');
+  const choreoName = (slotInput&&slotInput.value.trim())
+    || S.formations[0]?.name
+    || 'choreography';
+  const safeName = choreoName.replace(/[^a-z0-9]/gi,'-').toLowerCase();
+  a.href=url; a.download=safeName+'.json'; a.click(); URL.revokeObjectURL(url);
+  showAlert('Exported JSON','ok');
+}
+function importJSON(ev){
+  const file=ev.target.files[0]; if(!file) return;
+  if(!confirm('Import "'+file.name+'"? This replaces the current choreography.')) return;
+  const reader=new FileReader();
+  reader.onload=e=>{
+    try{
+      const snap=JSON.parse(e.target.result);
+      // Restore all fields with safe defaults for anything missing
+      S = {
+        dancers:    snap.dancers    || [],
+        absentIds:  snap.absentIds  || [],
+        vipIds:     snap.vipIds     || [],
+        vipBackups: snap.vipBackups || {},
+        dir:        snap.dir        || 'bot',
+        formations: snap.formations || [],
+        results:    snap.results    || [],
+        thresholds: snap.thresholds || {...THRESHOLD_DEFAULTS},
+        vipHardIds: new Set(snap.vipHardIds||[]),
+      };
+      // Restore nid to avoid ID collisions
+      const maxId = S.dancers.reduce((m,d)=>Math.max(m,d.id||0),0);
+      if(typeof nid !== 'undefined') nid = maxId + 1;
+      autoSave();
+      renderAll();
+      syncThresholdInputs();
+      renderSlots();
+      showPanel(S.formations.length?'formations':'setup');
+      showAlert('Imported: '+file.name,'ok');
+    }catch(err){
+      console.error('Import error:', err);
+      showAlert('Import failed: '+err.message,'warn');
+    }
+  };
+  reader.readAsText(file); ev.target.value='';
+}
+
 function setDir(d){ S.dir=d; renderSidebar(); renderFormations(); autoSave(); }
+const THRESHOLD_DEFAULTS={A:1.0,B:10,D:10,E:2.0,moveLimit:30};
 function updateThreshold(key, val){
-  if(isNaN(val)||val<=0) return;
-  if(!S.thresholds) S.thresholds={A:1.0,B:10,D:10,E:2.0};
-  S.thresholds[key]=val;
+  if(!S.thresholds) S.thresholds={...THRESHOLD_DEFAULTS};
+  // If empty or invalid, revert to default
+  S.thresholds[key] = (isNaN(val)||val===null||val===''||val<=0)
+    ? THRESHOLD_DEFAULTS[key]
+    : val;
+  syncThresholdInputs();
   autoSave();
 }
+function resetThresholds(){
+  S.thresholds={...THRESHOLD_DEFAULTS};
+  syncThresholdInputs();
+  autoSave();
+  showAlert('Thresholds reset to defaults.','ok');
+}
 function syncThresholdInputs(){
-  if(!S.thresholds) S.thresholds={A:1.0,B:10,D:10,E:2.0};
-  ['A','B','D','E'].forEach(k=>{
+  if(!S.thresholds) S.thresholds={...THRESHOLD_DEFAULTS};
+  ['A','B','D','E','moveLimit'].forEach(k=>{
     const el=document.getElementById('thr-'+k);
-    if(el) el.value=S.thresholds[k];
+    if(el) el.value=S.thresholds[k]??THRESHOLD_DEFAULTS[k];
   });
 }
 
@@ -1147,7 +1282,7 @@ function absentPositions(f){
 // mode: 'tight'  — place the 2 nearest tight at center (x=42, x=58)
 //       'half'   — each nearest dancer moves 55% of the way toward absent dancer's x
 //       'exact'  — nearest dancer fills absent spot; second goes to its bilateral mirror
-function closeGap(positions, absentPos, mode, nextPositions, fid, formVipId){
+function closeGap(positions, absentPos, mode, nextPositions, fid, formVipId, allPositions){
   if(!absentPos || !absentPos.length) return positions;
 
   // ── Constants ─────────────────────────────────────────────────────────────
@@ -1160,11 +1295,14 @@ function closeGap(positions, absentPos, mode, nextPositions, fid, formVipId){
 
   // Moving-Distance thresholds:
   //   rowGap = average vertical distance between rows in this formation
+  //   Computed from ALL dancers (including absent) so threshold is stable
+  //   regardless of who is absent.
   //   colGap = 10 units (= 2 × 5-unit grid spacing between neighbouring columns)
-  const rowYs = [...new Set(positions.map(p => Math.round(p.y * 2) / 2))].sort((a,b)=>a-b);
+  const gapSrc = allPositions || positions;
+  const rowYs = [...new Set(gapSrc.map(p => Math.round(p.y * 2) / 2))].sort((a,b)=>a-b);
   const rowGap = rowYs.length > 1
     ? (rowYs[rowYs.length-1] - rowYs[0]) / (rowYs.length - 1) : 10;
-  const colGap = 10; // 2 × width between 2 neighbouring vertical gridlines
+  const colGap = 10; // fixed: 2 × grid spacing between neighbouring columns
 
   // Hard-constrained VIP — cannot be moved at all
   const isFormHard = S.vipHardIds && S.vipHardIds.has(fid);
@@ -1172,7 +1310,8 @@ function closeGap(positions, absentPos, mode, nextPositions, fid, formVipId){
     ? formVipId : null;
 
   const audBot    = S.dir === 'bot';
-  const moveLimit = Math.max(1, Math.floor(positions.length * MOVE_LIMIT_RATIO));
+  const moveLimitPct = (S.thresholds&&S.thresholds.moveLimit!=null ? S.thresholds.moveLimit : 30) / 100;
+  const moveLimit = Math.max(1, Math.floor(positions.length * moveLimitPct));
 
   // ── Helpers ───────────────────────────────────────────────────────────────
   function distFromAudience(p){
@@ -1213,54 +1352,56 @@ function closeGap(positions, absentPos, mode, nextPositions, fid, formVipId){
 
   // Moving-Distance check — applies to both primary and cascade moves.
   // FAILS (returns false) if ANY of these conditions is met:
-  //   A. Candidate moves toward back of stage vertically > avgRowGap
-  //   B. Candidate moves horizontally > 10 units (2 × grid spacing)
-  //   C. After the move, any row closer to audience than the absent spot
-  //      is no longer bilaterally symmetric (front rows must stay intact)
-  //   D. Horizontal distance from absent spot to candidate's next-formation
-  //      position > 10 units
-  //   E. Vertical distance from absent spot to candidate's next-formation
-  //      position > 2 × avgRowGap
+  //   A. Candidate moves toward back of stage vertically > A × avgRowGap
+  //   B. Candidate moves horizontally > B units (default 10)
+  //   C. Horizontal distance: absent spot → candidate's next-formation pos > C units
+  //   D. Vertical distance: absent spot → candidate's next-formation pos > D × avgRowGap
+  //   E. Any row in front of the CANDIDATE (excl. candidate's own row) that WAS
+  //      symmetric becomes NOT symmetric after the move
   function passesDistCheck(p, tx, ty, pos){
-    // Condition A: vertical move toward back of stage (threshold = A × avgRowGap)
+    // Condition 1: vertical move toward back of stage
     const thrA = (S.thresholds&&S.thresholds.A!=null ? S.thresholds.A : 1.0) * rowGap;
     const moveTowardBack = audBot ? (p.y - ty) : (ty - p.y);
     if(moveTowardBack > thrA) return false;
 
-    // Condition B: horizontal move > B units
+    // Condition 2: horizontal move too large
     const thrB = S.thresholds&&S.thresholds.B!=null ? S.thresholds.B : colGap;
-    const moveHoriz = Math.abs(p.x - tx);
-    if(moveHoriz > thrB) return false;
+    if(Math.abs(p.x - tx) > thrB) return false;
 
-    // Condition C: front rows must stay symmetric after the move
-    const simPos = pos.map(q => q.dancerId === p.dancerId
-      ? {...q, x: tx, y: ty} : {...q}
-    );
-    const frontYs = [...new Set(
-      simPos
-        .filter(q => audBot ? q.y > ty : q.y < ty)
-        .map(q => Math.round(q.y * 2) / 2)
-    )];
-    for(const fy of frontYs){
-      const row = simPos.filter(q => Math.abs(q.y - fy) < THR);
-      const symmetric = row.every(q => {
-        if(Math.abs(q.x - 50) < THR) return true;
-        return row.some(r => r.dancerId !== q.dancerId && Math.abs(r.x - (100 - q.x)) < THR);
-      });
-      if(!symmetric) return false;
-    }
-
-    // Conditions D & E: next-formation position must be close to the absent spot
+    // Conditions 3 & 4: next-formation position relative to absent spot
     if(nextPositions){
       const np = nextPositions.find(q => q.dancerId === p.dancerId);
       if(np){
         const thrD = S.thresholds&&S.thresholds.D!=null ? S.thresholds.D : colGap;
         const thrE = (S.thresholds&&S.thresholds.E!=null ? S.thresholds.E : 2.0) * rowGap;
-        // D: horizontal distance from absent spot to next-formation position
-        if(Math.abs(tx - np.x) > thrD) return false;
-        // E: vertical distance from absent spot to next-formation position
-        if(Math.abs(ty - np.y) > thrE) return false;
+        if(Math.abs(tx - np.x) > thrD) return false; // Condition 3
+        if(Math.abs(ty - np.y) > thrE) return false; // Condition 4
       }
+    }
+
+    // Condition 5: rows in front of the CANDIDATE'S current position
+    // (not the absent spot), excluding the candidate's own row.
+    // Fail only if such a row WAS symmetric and becomes NOT symmetric after the move.
+    const simPos = pos.map(q => q.dancerId === p.dancerId
+      ? {...q, x: tx, y: ty} : {...q}
+    );
+    function rowSym(dancers){
+      return dancers.every(q => {
+        if(Math.abs(q.x - 50) < THR) return true;
+        return dancers.some(r => r.dancerId !== q.dancerId && Math.abs(r.x - (100 - q.x)) < THR);
+      });
+    }
+    // "In front of candidate" = closer to audience than candidate's current y
+    // Exclude the candidate's own row (Math.abs(fy - p.y) >= THR)
+    const candidateFrontYs = [...new Set(
+      pos
+        .filter(q => (audBot ? q.y > p.y : q.y < p.y) && Math.abs(q.y - p.y) >= THR)
+        .map(q => Math.round(q.y * 2) / 2)
+    )];
+    for(const fy of candidateFrontYs){
+      const rowBefore = pos.filter(q => Math.abs(q.y - fy) < THR);
+      const rowAfter  = simPos.filter(q => Math.abs(q.y - fy) < THR);
+      if(rowSym(rowBefore) && !rowSym(rowAfter)) return false; // Condition 5
     }
 
     return true;
@@ -1293,8 +1434,40 @@ function closeGap(positions, absentPos, mode, nextPositions, fid, formVipId){
     )[0].p;
   }
 
+  // ── findFiller: iterate candidates in score order until one passes check ──
+  // skipFirstTier=true → skip the lowest-score tier (used for Method B).
+  function findFiller(pos, tx, ty, excludeIds, skipFirstTier){
+    const scored = pos
+      .filter(p => !excludeIds.has(p.dancerId) && p.dancerId !== hardVipId)
+      .map(p => ({ p, score: candidateScore(p, tx, ty) }))
+      .sort((a,b) => a.score - b.score);
+    if(!scored.length) return null;
+
+    if(skipFirstTier){
+      // Build tiers and skip the first one (Method B)
+      const tiers = [];
+      let ts = 0;
+      for(let i = 1; i <= scored.length; i++){
+        if(i === scored.length || scored[i].score - scored[ts].score >= EPS){
+          tiers.push(scored.slice(ts, i)); ts = i;
+        }
+      }
+      if(tiers.length < 2) return null;
+      for(const {p} of tiers.slice(1).flat()){
+        if(passesDistCheck(p, tx, ty, pos)) return p;
+      }
+      return null;
+    }
+
+    // Method A: try each candidate lowest→highest until one passes
+    for(const {p} of scored){
+      if(passesDistCheck(p, tx, ty, pos)) return p;
+    }
+    return null;
+  }
+
   // ── Core fill routine ─────────────────────────────────────────────────────
-  function runFill(firstFillerId){
+  function runFill(skipFirstTier){
     const pos = positions.map(p => ({...p}));
     const moved = new Set();
 
@@ -1303,15 +1476,12 @@ function closeGap(positions, absentPos, mode, nextPositions, fid, formVipId){
       if(p){ p.x = tx; p.y = ty; moved.add(dancerId); }
     }
 
-    // Primary fill — Moving-Distance check applies
-    const firstP = pos.find(q => q.dancerId === firstFillerId);
-    if(!firstP || !passesDistCheck(firstP, absentPos[0].x, absentPos[0].y, pos)){
-      // Candidate fails check — optimization done, no moves
-      return { sym: computeSym(pos), movedCount: 0, overLimit: false, pos };
-    }
-    applyMove(firstFillerId, absentPos[0].x, absentPos[0].y);
+    // Primary fill: iterate through candidates until one passes dist check
+    const primary = findFiller(pos, absentPos[0].x, absentPos[0].y, new Set(), skipFirstTier);
+    if(!primary) return { sym: computeSym(pos), movedCount: 0, overLimit: false, pos };
+    applyMove(primary.dancerId, absentPos[0].x, absentPos[0].y);
 
-    // Iterative orphan repair — Moving-Distance check applies here too
+    // Iterative orphan repair: same — try candidates in score order until one passes
     for(let iter = 0; iter < 20; iter++){
       if(computeSym(pos) >= SYM_THR) break;
       if(moved.size > moveLimit) break;
@@ -1323,10 +1493,8 @@ function closeGap(positions, absentPos, mode, nextPositions, fid, formVipId){
       for(const o of orphans){
         const tx = 100 - o.x, ty = o.y;
         const excl = new Set([...moved, o.dancerId]);
-        const candidate = pickCandidate(pos, tx, ty, excl, false);
-        if(!candidate) continue;
-        if(!passesDistCheck(candidate, tx, ty, pos)) continue; // fails → skip
-        jobs.push({ cost: candidateScore(candidate, tx, ty), tx, ty, filler: candidate });
+        const filler = findFiller(pos, tx, ty, excl, false);
+        if(filler) jobs.push({ cost: candidateScore(filler, tx, ty), tx, ty, filler });
       }
 
       if(!jobs.length) break;
@@ -1346,22 +1514,17 @@ function closeGap(positions, absentPos, mode, nextPositions, fid, formVipId){
   // ── Step 1: symmetry check ────────────────────────────────────────────────
   if(computeSym(positions) >= SYM_THR) return positions;
 
-  // ── Step 2: pick primary candidate (Method A = lowest score) ─────────────
+  // ── Step 2: Method A — iterate candidates lowest score first ─────────────
   const absRef = absentPos[0];
-  const fillerA = pickCandidate(positions, absRef.x, absRef.y, new Set(), false);
-  if(!fillerA) return positions;
-  const resultA = runFill(fillerA.dancerId);
+  const resultA = runFill(false);
   let best = resultA;
 
-  // ── Method B: if A exceeds move limit, try second-lowest scorer ──────────
+  // ── Method B: if A exceeds move limit, skip first score tier and retry ───
   if(resultA.overLimit){
-    const fillerB = pickCandidate(positions, absRef.x, absRef.y, new Set(), true);
-    if(fillerB){
-      const resultB = runFill(fillerB.dancerId);
-      if(resultB.movedCount < resultA.movedCount ||
-        (resultB.movedCount === resultA.movedCount && resultB.sym > resultA.sym)){
-        best = resultB;
-      }
+    const resultB = runFill(true);
+    if(resultB.movedCount < resultA.movedCount ||
+      (resultB.movedCount === resultA.movedCount && resultB.sym > resultA.sym)){
+      best = resultB;
     }
   }
 
@@ -1405,7 +1568,7 @@ function optimizeFormation(f, prev, nextF){
   const absPts=absentPositions(f);
   // Pass next formation's positions so closeGap can penalise large transition jumps
   const nextPositions = nextF ? absFilter(nextF.positions) : null;
-  closeGap(pos, absPts, 'exact', nextPositions, f.id, f.vipDancerId);
+  closeGap(pos, absPts, 'exact', nextPositions, f.id, f.vipDancerId, f.positions);
   fixPoseSymmetry(pos);
   const {positions:pos2,actualVip}=placeVips(pos,f.vipDancerId,f.id);
   // Count moves vs the ORIGINAL formation positions (not vs previous formation)

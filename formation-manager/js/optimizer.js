@@ -1,8 +1,127 @@
-// ═══════════════════════════════════════════════════════
-// OPTIMIZER — formation optimization engine
-// ═══════════════════════════════════════════════════════
+// OPTIMIZER
 
-];
+ placed.forEach(d=>pal.appendChild(buildPalItem(d,true)));
+  }
+}
+function buildPalItem(d,placed){
+  const it=el('div','pi'+(placed?' placed':''));
+  it.dataset.dancerId=d.id;
+  const pos=ePts.find(p=>p.dancerId===d.id);
+  const isAbs=S.absentIds.includes(d.id);
+  const poseBadge=pos&&pos.pose!=='none'?'<span class="pose-pip '+POSE_CLS[pos.pose]+'" style="position:relative;top:0;right:0;width:12px;height:12px;display:inline-flex">'+POSE_ICON[pos.pose]+'</span>':'';
+  it.innerHTML=av(d)+'<span style="flex:1;font-size:12px">'+esc(d.name)+'</span>'+poseBadge+(isAbs?'<span class="badge badge-abs">ABS</span>':'');
+  if(!placed){
+    it.draggable=true;
+    it.addEventListener('dragstart',ev=>{ ev.dataTransfer.setData('text/plain',d.id); ev.dataTransfer.effectAllowed='copy'; });
+    it.addEventListener('pointerdown',ev=>{ if(ev.button!==0) return; ev.preventDefault(); eStartPalDrag(ev,d); });
+  }
+  return it;
+}
+
+// drag state
+let dragMulti=[]; // for multi-select drag: [{idx, startX, startY}]
+let dragStartMouseX=0, dragStartMouseY=0;
+let isDragging=false;
+
+function eStartPalDrag(ev,d){
+  eDrag={type:'pal',dancerId:d.id,d};
+  showGhost(d,ev.clientX,ev.clientY);
+  document.getElementById('dg-ghost').style.display='block';
+  isDragging=false;
+}
+function eStartDrag(ev,idx,d,wrapEl){
+  // If multi-selected, drag all selected
+  if(eSelected.size>1 && eSelected.has(d.id)){
+    const selectedIdxs=[];
+    ePts.forEach((p,i)=>{ if(eSelected.has(p.dancerId)) selectedIdxs.push(i); });
+    dragMulti=selectedIdxs;
+  } else {
+    dragMulti=[idx];
+  }
+  dragStartMouseX=ev.clientX; dragStartMouseY=ev.clientY;
+  eDrag={type:'stage',primaryIdx:idx,d,wrapEl};
+  wrapEl.classList.add('dragging');
+  showGhost(d,ev.clientX,ev.clientY);
+  document.getElementById('dg-ghost').style.display='block';
+  isDragging=false;
+}
+function showGhost(d,cx,cy){
+  const g=document.getElementById('dgh'),gd=document.getElementById('dgh-dot');
+  gd.style.background=d.color+'30'; gd.style.border='2px solid '+d.color; gd.style.color=d.color;
+  gd.textContent=ini(d.name); g.style.display='block'; g.style.left=cx+'px'; g.style.top=cy+'px';
+}
+
+function eMouseMove(ev){
+  if(!eDrag) return;
+  isDragging=true;
+  const stage=document.getElementById('estage');
+  const rect=stage.getBoundingClientRect();
+  const pct=toPct(ev.clientX,ev.clientY,rect);
+  if(pct){ const s=snp(pct.x,pct.y); const gh=document.getElementById('dg-ghost'); gh.style.left=s.x+'%'; gh.style.top=s.y+'%'; gh.style.display='block'; }
+}
+function eMouseUp(ev){
+  if(!eDrag) return;
+  const stage=document.getElementById('estage');
+  const rect=stage.getBoundingClientRect();
+  const pct=toPct(ev.clientX,ev.clientY,rect);
+  if(pct){
+    const s=snp(pct.x,pct.y);
+    if(eDrag.type==='pal'){
+      if(!ePts.find(p=>p.dancerId===eDrag.dancerId)){
+        ePts.push({x:s.x,y:s.y,dancerId:eDrag.dancerId,pose:'none'});
+      }
+    } else if(eDrag.type==='stage'){
+      // move all selected relative to primary
+      const primary=ePts[eDrag.primaryIdx];
+      if(primary){
+        const dx=s.x-primary.x, dy=s.y-primary.y;
+        dragMulti.forEach(i=>{
+          if(ePts[i]){ ePts[i].x=Math.min(97,Math.max(3,ePts[i].x+dx)); ePts[i].y=Math.min(93,Math.max(3,ePts[i].y+dy)); }
+        });
+      }
+      if(eDrag.wrapEl) eDrag.wrapEl.classList.remove('dragging');
+    }
+    renderEStage(); renderEPal();
+  } else {
+    if(eDrag.wrapEl) eDrag.wrapEl.classList.remove('dragging');
+  }
+  eDrag=null; dragMulti=[];
+  document.getElementById('dgh').style.display='none';
+  document.getElementById('dg-ghost').style.display='none';
+}
+function eDragOver(ev){ ev.preventDefault(); ev.dataTransfer.dropEffect='copy'; }
+function eDropPal(ev){
+  ev.preventDefault();
+  const did=parseInt(ev.dataTransfer.getData('text/plain')); if(!did) return;
+  if(ePts.find(p=>p.dancerId===did)) return;
+  const stage=document.getElementById('estage');
+  const rect=stage.getBoundingClientRect();
+  const pct=toPct(ev.clientX,ev.clientY,rect); if(!pct) return;
+  const s=snp(pct.x,pct.y);
+  ePts.push({x:s.x,y:s.y,dancerId:did,pose:'none'});
+  renderEStage(); renderEPal();
+}
+document.addEventListener('pointermove',ev=>{
+  const g=document.getElementById('dgh');
+  if(eDrag){ g.style.left=ev.clientX+'px'; g.style.top=ev.clientY+'px'; }
+  if(eDrag&&document.getElementById('eo').classList.contains('open')){
+    const stage=document.getElementById('estage');
+    if(!stage) return;
+    const rect=stage.getBoundingClientRect();
+    const pct=toPct(ev.clientX,ev.clientY,rect);
+    const gh=document.getElementById('dg-ghost');
+    if(pct){ const s=snp(pct.x,pct.y); gh.style.left=s.x+'%'; gh.style.top=s.y+'%'; gh.style.display='block'; }
+    else gh.style.display='none';
+  }
+});
+document.addEventListener('pointerup',ev=>{
+  if(!eDrag) return;
+  const stage=document.getElementById('estage');
+  if(!stage){ eDrag=null; return; }
+  const rect=stage.getBoundingClientRect();
+  if(ev.clientX<rect.left||ev.clientX>rect.right||ev.clientY<rect.top||ev.clientY>rect.bottom){
+    if(eDrag.wrapEl) eDrag.wrapEl.classList.remove('dragging');
+    eDrag=null; dragMulti=[];
     document.getElementById('dgh').style.display='none';
     document.getElementById('dg-ghost').style.display='none';
   }
@@ -87,114 +206,4 @@ function runOptimize(){
   S.formations.forEach((f,i)=>{
     const nextF = i+1 < S.formations.length ? S.formations[i+1] : null;
     const r=optimizeFormation(f, prev, nextF);
-    fms.push(r); prev=r;
-  });
-  S.results=[{label, formations:fms}];
-  showPanel('results'); renderResults(); autoSave();
-}
-
-// shared helpers
-function absFilter(pos){ return pos.filter(p=>!S.absentIds.includes(p.dancerId)).map(p=>deepClone(p)); }
-
-// Resolve effective VIP: if the VIP is absent, walk through backups
-function resolveVip(vipDancerId){
-  if(!vipDancerId) return null;
-  if(!S.absentIds.includes(vipDancerId)) return vipDancerId;
-  const backs=(S.vipBackups[vipDancerId]||[]).filter(b=>b&&!S.absentIds.includes(b));
-  return backs[0]||null;
-}
-
-// Prominence score — lower = more important (center + toward audience)
-function importanceScore(p){
-  const audBot=S.dir==='bot';
-  return Math.abs(p.x-50)+(audBot?(100-p.y)*.6:p.y*.6);
-}
-
-// Place VIP into a prominent position.
-// Hard mode (S.vipHard=true): VIP stays exactly where they are — no swap at all.
-// Soft mode: if VIP is not in top-3 prominent spots, swap them to the best spot.
-function placeVips(positions, vipDancerId, fid){
-  const effectiveVip=resolveVip(vipDancerId);
-  if(!effectiveVip) return{positions,actualVip:null};
-  const isHard = S.vipHardIds && S.vipHardIds.has(fid);
-  if(isHard) return{positions,actualVip:effectiveVip}; // frozen — no swap
-  const ranked=[...positions].map((p,i)=>({i,score:importanceScore(p)})).sort((a,b)=>a.score-b.score);
-  const vipIdx=positions.findIndex(p=>p.dancerId===effectiveVip);
-  if(vipIdx<0) return{positions,actualVip:effectiveVip};
-  const vipRank=ranked.findIndex(s=>s.i===vipIdx);
-  if(vipRank<=2) return{positions,actualVip:effectiveVip}; // already prominent — leave alone
-  const bestSlot=ranked[0];
-  const tmp={x:positions[bestSlot.i].x,y:positions[bestSlot.i].y};
-  positions[bestSlot.i].x=positions[vipIdx].x; positions[bestSlot.i].y=positions[vipIdx].y;
-  positions[vipIdx].x=tmp.x; positions[vipIdx].y=tmp.y;
-  return{positions,actualVip:effectiveVip};
-}
-
-// ── SYMMETRY ANALYSIS ──────────────────────────────────────────────────────
-// Mirror threshold in percent-of-stage units
-// Find the absent dancer's original position(s) in this formation
-function absentPositions(f){
-  return f.positions.filter(p=>S.absentIds.includes(p.dancerId));
-}
-
-// ── CORE: close the gap ────────────────────────────────────────────────────
-// The absent dancer left a gap. We find the 2 dancers whose positions are
-// CLOSEST to where the absent dancer stood, and move only those two toward
-// the center so they stand side by side. Everyone else is completely frozen.
-//
-// This works regardless of whether the formation was symmetric before:
-// we simply ask "who was nearest to Lanna?" and slide them together.
-//
-// mode: 'tight'  — place the 2 nearest tight at center (x=42, x=58)
-//       'half'   — each nearest dancer moves 55% of the way toward absent dancer's x
-//       'exact'  — nearest dancer fills absent spot; second goes to its bilateral mirror
-function closeGap(positions, absentPos, mode, nextPositions, fid, formVipId){
-  if(!absentPos || !absentPos.length) return positions;
-
-  // ── Constants ─────────────────────────────────────────────────────────────
-  const THR     = 1;    // bilateral mirror threshold (% of stage width)
-  const SYM_THR = 0.99; // "symmetric enough" — no action above this
-  const DIST_W  = 1.0;  // weight: distance to fill spot (primary)
-  const TRANS_W = 0.4;  // weight: transition to next formation (secondary)
-  const EPS     = 0.5;  // score tie threshold
-  const MOVE_LIMIT_RATIO = 0.30; // max 30% of active dancers may move
-
-  // Moving-Distance thresholds:
-  //   rowGap = average vertical distance between rows in this formation
-  //   colGap = 10 units (= 2 × 5-unit grid spacing between neighbouring columns)
-  const rowYs = [...new Set(positions.map(p => Math.round(p.y * 2) / 2))].sort((a,b)=>a-b);
-  const rowGap = rowYs.length > 1
-    ? (rowYs[rowYs.length-1] - rowYs[0]) / (rowYs.length - 1) : 10;
-  const colGap = 10; // 2 × width between 2 neighbouring vertical gridlines
-
-  // Hard-constrained VIP — cannot be moved at all
-  const isFormHard = S.vipHardIds && S.vipHardIds.has(fid);
-  const hardVipId  = (isFormHard && formVipId && !S.absentIds.includes(formVipId))
-    ? formVipId : null;
-
-  const audBot    = S.dir === 'bot';
-  const moveLimit = Math.max(1, Math.floor(positions.length * MOVE_LIMIT_RATIO));
-
-  // ── Helpers ───────────────────────────────────────────────────────────────
-  function distFromAudience(p){
-    return audBot ? p.y : (100 - p.y); // higher = further from audience
-  }
-
-  function computeSym(pos){
-    if(!pos.length) return 0;
-    let n = 0;
-    pos.forEach(p => {
-      if(Math.abs(p.x - 50) < THR){ n++; return; }
-      const mx = 100 - p.x, my = p.y;
-      if(pos.some(q => q.dancerId !== p.dancerId &&
-          Math.abs(q.x - mx) < THR && Math.abs(q.y - my) < THR)) n++;
-    });
-    return n / pos.length;
-  }
-
-  function findOrphans(pos){
-    return pos.filter(p => {
-      if(Math.abs(p.x - 50) < THR) return false;
-      const mx = 100 - p.x, my = p.y;
-      return !pos.some(q => q.dancerId !== p.dancerId &&
-        Math.abs(q.x - mx) < THR && Math.abs(q.y - my) < THR
+    fms.push(r); p

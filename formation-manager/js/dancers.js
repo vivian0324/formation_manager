@@ -1,8 +1,10 @@
-// ═══════════════════════════════════════════════════════
-// DANCERS — add/remove/toggle absent, sidebar rendering
-// ═══════════════════════════════════════════════════════
+// DANCERS
 
-ap.defShape)  document.getElementById('def-shape').value  = snap.defShape;
+cers.forEach(d=>{ if(d.id>maxId) maxId=d.id; });
+    S.formations.forEach(f=>{ if(f.id>maxId) maxId=f.id; });
+    nid = maxId + 1;
+    if(snap.perfTitle) document.getElementById('perf-title').value = snap.perfTitle;
+    if(snap.defShape)  document.getElementById('def-shape').value  = snap.defShape;
     return true;
   }catch(e){ return false; }
 }
@@ -77,67 +79,48 @@ function showDancerMenu(id){
   toggleAbsent(id);
 }
 
-function setDir(d){ S.dir=d; renderSidebar(); renderFormations(); autoSave(); }
-function updateThreshold(key, val){
-  if(isNaN(val)||val<=0) return;
-  if(!S.thresholds) S.thresholds={A:1.0,B:10,D:10,E:2.0};
-  S.thresholds[key]=val;
-  autoSave();
+// ── Choreography slots ────────────────────────────────────────────────────
+function saveSlot(){
+  const name=document.getElementById('slot-name').value.trim();
+  if(!name){ showAlert('Enter a name first.','warn'); return; }
+  const slots=loadSlots();
+  const snap=JSON.parse(JSON.stringify(S,(k,v)=>v instanceof Set?[...v]:v));
+  snap._savedAt=new Date().toLocaleString();
+  slots[name]=snap; saveSlots(slots);
+  document.getElementById('slot-name').value='';
+  renderSlots(); showAlert('Saved: '+name,'ok');
 }
-function syncThresholdInputs(){
-  if(!S.thresholds) S.thresholds={A:1.0,B:10,D:10,E:2.0};
-  ['A','B','D','E'].forEach(k=>{
-    const el=document.getElementById('thr-'+k);
-    if(el) el.value=S.thresholds[k];
-  });
+function loadSlot(name){
+  if(!confirm('Load "'+name+'"? Unsaved changes will be lost.')) return;
+  const slots=loadSlots(); const snap=slots[name];
+  if(!snap){ showAlert('Not found.','warn'); return; }
+  S=snap; S.vipHardIds=new Set(snap.vipHardIds||[]);
+  if(!S.thresholds) S.thresholds={A:1.0,B:10,D:10,E:2.0,moveLimit:30};
+  autoSave(); renderAll(); syncThresholdInputs(); renderSlots();
+  showPanel(S.formations.length?'formations':'setup');
+  showAlert('Loaded: '+name,'ok');
 }
-
-function toggleVipHard(fid){
-  if(S.vipHardIds.has(fid)) S.vipHardIds.delete(fid);
-  else S.vipHardIds.add(fid);
-  renderFormations(); autoSave();
+function deleteSlot(name){
+  if(!confirm('Delete "'+name+'"?')) return;
+  const slots=loadSlots(); delete slots[name]; saveSlots(slots);
+  renderSlots(); showAlert('Deleted: '+name,'ok');
 }
-
-// ─── formations ────────────────────────────────────────
-function addFormationCopy(){
-  const last = S.formations[S.formations.length-1];
-  if(!last){ addFormationBlank(); return; }
-  const f = deepClone(last);
-  f.id = uid();
-  f.name = 'Formation '+(S.formations.length+1);
-  S.formations.push(f);
-  renderFormations(); autoSave();
-}
-function addFormationBlank(){
-  const f = {id:uid(), name:'Formation '+(S.formations.length+1), vipDancerId:null, positions:[]};
-  autoPlaceF(f);
-  S.formations.push(f);
-  renderFormations(); autoSave();
-}
-function autoPlaceF(f){
-  const shape = document.getElementById('def-shape').value;
-  const pts = genPts(S.dancers.length, shape);
-  f.positions = pts.map((p,i)=>({x:p.x,y:p.y,dancerId:S.dancers[i].id,pose:'none'}));
-}
-function genPts(n, shape){
-  const pts=[];
-  if(shape==='grid'){
-    const cols=Math.ceil(Math.sqrt(n*1.6)), rows=Math.ceil(n/cols); let i=0;
-    for(let r=0;r<rows&&i<n;r++){
-      const rc=Math.min(cols,n-i), xo=(cols-rc)*.5;
-      for(let c=0;c<rc;c++){ pts.push({x:10+(c+xo)*(80/Math.max(cols-1,1)), y:15+r*(65/Math.max(rows-1,1))}); i++; }
-    }
-  } else if(shape==='arc'){
-    for(let i=0;i<n;i++){ const a=Math.PI*(.15+.7*(i/Math.max(n-1,1))); pts.push({x:50+40*Math.cos(a),y:70-55*Math.sin(a)}); }
-  } else if(shape==='diagonal'){
-    const rows=Math.ceil(n/3); let i=0;
-    for(let r=0;r<rows&&i<n;r++){ const rn=Math.min(3,n-i); for(let c=0;c<rn;c++){ pts.push({x:15+r*18+c*22,y:20+r*22-c*10}); i++; } }
-  } else {
-    for(let i=0;i<n;i++) pts.push({x:10+((i*37+13)%80),y:10+((i*53+7)%70)});
+function renderSlots(){
+  const cont=document.getElementById('slot-list'); if(!cont) return;
+  const slots=loadSlots(); const names=Object.keys(slots);
+  if(!names.length){
+    cont.innerHTML='<div class="tm" style="font-size:10px;color:var(--txt3)">No saved choreographies yet.</div>';
+    return;
   }
-  return pts;
-}
-function removeFormation(id){ S.formations=S.formations.filter(f=>f.id!==id); renderFormations(); autoSave(); }
-function renameF(id,v){ const f=S.formations.find(x=>x.id===id); if(f){ f.name=v; autoSave(); } }
-function shuffleF(id){
-  const f=S.formations
+  cont.innerHTML='';
+  names.forEach(name=>{
+    const row=document.createElement('div');
+    row.style.cssText='display:flex;align-items:center;gap:4px;font-size:11px';
+    const info=document.createElement('div'); info.style.flex='1';
+    info.style.overflow='hidden';
+    info.innerHTML='<div style="font-weight:500;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">'+esc(name)+'</div>'
+      +'<div style="font-size:9px;color:var(--txt3)">'+esc(slots[name]._savedAt||'')+'</div>';
+    const lb=document.createElement('button'); lb.className='btn btn-sm btn-acc'; lb.textContent='Load';
+    lb.onclick=()=>loadSlot(name);
+    const db=document.createElement('button'); db.className='btn btn-sm btn-red'; db.textContent='×';
+  

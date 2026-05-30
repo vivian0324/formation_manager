@@ -1,8 +1,120 @@
-// ═══════════════════════════════════════════════════════
-// UI — navigation, results, export, utilities, init
-// ═══════════════════════════════════════════════════════
+// UI
 
-);
+rev=r;
+  });
+  S.results=[{label, formations:fms}];
+  showPanel('results'); renderResults(); autoSave();
+}
+
+// shared helpers
+function absFilter(pos){ return pos.filter(p=>!S.absentIds.includes(p.dancerId)).map(p=>deepClone(p)); }
+
+// Resolve effective VIP: if the VIP is absent, walk through backups
+function resolveVip(vipDancerId){
+  if(!vipDancerId) return null;
+  if(!S.absentIds.includes(vipDancerId)) return vipDancerId;
+  const backs=(S.vipBackups[vipDancerId]||[]).filter(b=>b&&!S.absentIds.includes(b));
+  return backs[0]||null;
+}
+
+// Prominence score — lower = more important (center + toward audience)
+function importanceScore(p){
+  const audBot=S.dir==='bot';
+  return Math.abs(p.x-50)+(audBot?(100-p.y)*.6:p.y*.6);
+}
+
+// Place VIP into a prominent position.
+// Hard mode (S.vipHard=true): VIP stays exactly where they are — no swap at all.
+// Soft mode: if VIP is not in top-3 prominent spots, swap them to the best spot.
+function placeVips(positions, vipDancerId, fid){
+  const effectiveVip=resolveVip(vipDancerId);
+  if(!effectiveVip) return{positions,actualVip:null};
+  const isHard = S.vipHardIds && S.vipHardIds.has(fid);
+  if(isHard) return{positions,actualVip:effectiveVip}; // frozen — no swap
+  const ranked=[...positions].map((p,i)=>({i,score:importanceScore(p)})).sort((a,b)=>a.score-b.score);
+  const vipIdx=positions.findIndex(p=>p.dancerId===effectiveVip);
+  if(vipIdx<0) return{positions,actualVip:effectiveVip};
+  const vipRank=ranked.findIndex(s=>s.i===vipIdx);
+  if(vipRank<=2) return{positions,actualVip:effectiveVip}; // already prominent — leave alone
+  const bestSlot=ranked[0];
+  const tmp={x:positions[bestSlot.i].x,y:positions[bestSlot.i].y};
+  positions[bestSlot.i].x=positions[vipIdx].x; positions[bestSlot.i].y=positions[vipIdx].y;
+  positions[vipIdx].x=tmp.x; positions[vipIdx].y=tmp.y;
+  return{positions,actualVip:effectiveVip};
+}
+
+// ── SYMMETRY ANALYSIS ──────────────────────────────────────────────────────
+// Mirror threshold in percent-of-stage units
+// Find the absent dancer's original position(s) in this formation
+function absentPositions(f){
+  return f.positions.filter(p=>S.absentIds.includes(p.dancerId));
+}
+
+// ── CORE: close the gap ────────────────────────────────────────────────────
+// The absent dancer left a gap. We find the 2 dancers whose positions are
+// CLOSEST to where the absent dancer stood, and move only those two toward
+// the center so they stand side by side. Everyone else is completely frozen.
+//
+// This works regardless of whether the formation was symmetric before:
+// we simply ask "who was nearest to Lanna?" and slide them together.
+//
+// mode: 'tight'  — place the 2 nearest tight at center (x=42, x=58)
+//       'half'   — each nearest dancer moves 55% of the way toward absent dancer's x
+//       'exact'  — nearest dancer fills absent spot; second goes to its bilateral mirror
+function closeGap(positions, absentPos, mode, nextPositions, fid, formVipId, allPositions){
+  if(!absentPos || !absentPos.length) return positions;
+
+  // ── Constants ─────────────────────────────────────────────────────────────
+  const THR     = 1;    // bilateral mirror threshold (% of stage width)
+  const SYM_THR = 0.99; // "symmetric enough" — no action above this
+  const DIST_W  = 1.0;  // weight: distance to fill spot (primary)
+  const TRANS_W = 0.4;  // weight: transition to next formation (secondary)
+  const EPS     = 0.5;  // score tie threshold
+  const MOVE_LIMIT_RATIO = 0.30; // max 30% of active dancers may move
+
+  // Moving-Distance thresholds:
+  //   rowGap = average vertical distance between rows in this formation
+  //   Computed from ALL dancers (including absent) so threshold is stable
+  //   regardless of who is absent.
+  //   colGap = 10 units (= 2 × 5-unit grid spacing between neighbouring columns)
+  const gapSrc = allPositions || positions;
+  const rowYs = [...new Set(gapSrc.map(p => Math.round(p.y * 2) / 2))].sort((a,b)=>a-b);
+  const rowGap = rowYs.length > 1
+    ? (rowYs[rowYs.length-1] - rowYs[0]) / (rowYs.length - 1) : 10;
+  const colGap = 10; // fixed: 2 × grid spacing between neighbouring columns
+
+  // Hard-constrained VIP — cannot be moved at all
+  const isFormHard = S.vipHardIds && S.vipHardIds.has(fid);
+  const hardVipId  = (isFormHard && formVipId && !S.absentIds.includes(formVipId))
+    ? formVipId : null;
+
+  const audBot    = S.dir === 'bot';
+  const moveLimitPct = (S.thresholds&&S.thresholds.moveLimit!=null ? S.thresholds.moveLimit : 30) / 100;
+  const moveLimit = Math.max(1, Math.floor(positions.length * moveLimitPct));
+
+  // ── Helpers ───────────────────────────────────────────────────────────────
+  function distFromAudience(p){
+    return audBot ? p.y : (100 - p.y); // higher = further from audience
+  }
+
+  function computeSym(pos){
+    if(!pos.length) return 0;
+    let n = 0;
+    pos.forEach(p => {
+      if(Math.abs(p.x - 50) < THR){ n++; return; }
+      const mx = 100 - p.x, my = p.y;
+      if(pos.some(q => q.dancerId !== p.dancerId &&
+          Math.abs(q.x - mx) < THR && Math.abs(q.y - my) < THR)) n++;
+    });
+    return n / pos.length;
+  }
+
+  function findOrphans(pos){
+    return pos.filter(p => {
+      if(Math.abs(p.x - 50) < THR) return false;
+      const mx = 100 - p.x, my = p.y;
+      return !pos.some(q => q.dancerId !== p.dancerId &&
+        Math.abs(q.x - mx) < THR && Math.abs(q.y - my) < THR);
     });
   }
 
@@ -19,54 +131,56 @@
 
   // Moving-Distance check — applies to both primary and cascade moves.
   // FAILS (returns false) if ANY of these conditions is met:
-  //   A. Candidate moves toward back of stage vertically > avgRowGap
-  //   B. Candidate moves horizontally > 10 units (2 × grid spacing)
-  //   C. After the move, any row closer to audience than the absent spot
-  //      is no longer bilaterally symmetric (front rows must stay intact)
-  //   D. Horizontal distance from absent spot to candidate's next-formation
-  //      position > 10 units
-  //   E. Vertical distance from absent spot to candidate's next-formation
-  //      position > 2 × avgRowGap
+  //   A. Candidate moves toward back of stage vertically > A × avgRowGap
+  //   B. Candidate moves horizontally > B units (default 10)
+  //   C. Horizontal distance: absent spot → candidate's next-formation pos > C units
+  //   D. Vertical distance: absent spot → candidate's next-formation pos > D × avgRowGap
+  //   E. Any row in front of the CANDIDATE (excl. candidate's own row) that WAS
+  //      symmetric becomes NOT symmetric after the move
   function passesDistCheck(p, tx, ty, pos){
-    // Condition A: vertical move toward back of stage (threshold = A × avgRowGap)
+    // Condition 1: vertical move toward back of stage
     const thrA = (S.thresholds&&S.thresholds.A!=null ? S.thresholds.A : 1.0) * rowGap;
     const moveTowardBack = audBot ? (p.y - ty) : (ty - p.y);
     if(moveTowardBack > thrA) return false;
 
-    // Condition B: horizontal move > B units
+    // Condition 2: horizontal move too large
     const thrB = S.thresholds&&S.thresholds.B!=null ? S.thresholds.B : colGap;
-    const moveHoriz = Math.abs(p.x - tx);
-    if(moveHoriz > thrB) return false;
+    if(Math.abs(p.x - tx) > thrB) return false;
 
-    // Condition C: front rows must stay symmetric after the move
-    const simPos = pos.map(q => q.dancerId === p.dancerId
-      ? {...q, x: tx, y: ty} : {...q}
-    );
-    const frontYs = [...new Set(
-      simPos
-        .filter(q => audBot ? q.y > ty : q.y < ty)
-        .map(q => Math.round(q.y * 2) / 2)
-    )];
-    for(const fy of frontYs){
-      const row = simPos.filter(q => Math.abs(q.y - fy) < THR);
-      const symmetric = row.every(q => {
-        if(Math.abs(q.x - 50) < THR) return true;
-        return row.some(r => r.dancerId !== q.dancerId && Math.abs(r.x - (100 - q.x)) < THR);
-      });
-      if(!symmetric) return false;
-    }
-
-    // Conditions D & E: next-formation position must be close to the absent spot
+    // Conditions 3 & 4: next-formation position relative to absent spot
     if(nextPositions){
       const np = nextPositions.find(q => q.dancerId === p.dancerId);
       if(np){
         const thrD = S.thresholds&&S.thresholds.D!=null ? S.thresholds.D : colGap;
         const thrE = (S.thresholds&&S.thresholds.E!=null ? S.thresholds.E : 2.0) * rowGap;
-        // D: horizontal distance from absent spot to next-formation position
-        if(Math.abs(tx - np.x) > thrD) return false;
-        // E: vertical distance from absent spot to next-formation position
-        if(Math.abs(ty - np.y) > thrE) return false;
+        if(Math.abs(tx - np.x) > thrD) return false; // Condition 3
+        if(Math.abs(ty - np.y) > thrE) return false; // Condition 4
       }
+    }
+
+    // Condition 5: rows in front of the CANDIDATE'S current position
+    // (not the absent spot), excluding the candidate's own row.
+    // Fail only if such a row WAS symmetric and becomes NOT symmetric after the move.
+    const simPos = pos.map(q => q.dancerId === p.dancerId
+      ? {...q, x: tx, y: ty} : {...q}
+    );
+    function rowSym(dancers){
+      return dancers.every(q => {
+        if(Math.abs(q.x - 50) < THR) return true;
+        return dancers.some(r => r.dancerId !== q.dancerId && Math.abs(r.x - (100 - q.x)) < THR);
+      });
+    }
+    // "In front of candidate" = closer to audience than candidate's current y
+    // Exclude the candidate's own row (Math.abs(fy - p.y) >= THR)
+    const candidateFrontYs = [...new Set(
+      pos
+        .filter(q => (audBot ? q.y > p.y : q.y < p.y) && Math.abs(q.y - p.y) >= THR)
+        .map(q => Math.round(q.y * 2) / 2)
+    )];
+    for(const fy of candidateFrontYs){
+      const rowBefore = pos.filter(q => Math.abs(q.y - fy) < THR);
+      const rowAfter  = simPos.filter(q => Math.abs(q.y - fy) < THR);
+      if(rowSym(rowBefore) && !rowSym(rowAfter)) return false; // Condition 5
     }
 
     return true;
@@ -99,8 +213,40 @@
     )[0].p;
   }
 
+  // ── findFiller: iterate candidates in score order until one passes check ──
+  // skipFirstTier=true → skip the lowest-score tier (used for Method B).
+  function findFiller(pos, tx, ty, excludeIds, skipFirstTier){
+    const scored = pos
+      .filter(p => !excludeIds.has(p.dancerId) && p.dancerId !== hardVipId)
+      .map(p => ({ p, score: candidateScore(p, tx, ty) }))
+      .sort((a,b) => a.score - b.score);
+    if(!scored.length) return null;
+
+    if(skipFirstTier){
+      // Build tiers and skip the first one (Method B)
+      const tiers = [];
+      let ts = 0;
+      for(let i = 1; i <= scored.length; i++){
+        if(i === scored.length || scored[i].score - scored[ts].score >= EPS){
+          tiers.push(scored.slice(ts, i)); ts = i;
+        }
+      }
+      if(tiers.length < 2) return null;
+      for(const {p} of tiers.slice(1).flat()){
+        if(passesDistCheck(p, tx, ty, pos)) return p;
+      }
+      return null;
+    }
+
+    // Method A: try each candidate lowest→highest until one passes
+    for(const {p} of scored){
+      if(passesDistCheck(p, tx, ty, pos)) return p;
+    }
+    return null;
+  }
+
   // ── Core fill routine ─────────────────────────────────────────────────────
-  function runFill(firstFillerId){
+  function runFill(skipFirstTier){
     const pos = positions.map(p => ({...p}));
     const moved = new Set();
 
@@ -109,15 +255,12 @@
       if(p){ p.x = tx; p.y = ty; moved.add(dancerId); }
     }
 
-    // Primary fill — Moving-Distance check applies
-    const firstP = pos.find(q => q.dancerId === firstFillerId);
-    if(!firstP || !passesDistCheck(firstP, absentPos[0].x, absentPos[0].y, pos)){
-      // Candidate fails check — optimization done, no moves
-      return { sym: computeSym(pos), movedCount: 0, overLimit: false, pos };
-    }
-    applyMove(firstFillerId, absentPos[0].x, absentPos[0].y);
+    // Primary fill: iterate through candidates until one passes dist check
+    const primary = findFiller(pos, absentPos[0].x, absentPos[0].y, new Set(), skipFirstTier);
+    if(!primary) return { sym: computeSym(pos), movedCount: 0, overLimit: false, pos };
+    applyMove(primary.dancerId, absentPos[0].x, absentPos[0].y);
 
-    // Iterative orphan repair — Moving-Distance check applies here too
+    // Iterative orphan repair: same — try candidates in score order until one passes
     for(let iter = 0; iter < 20; iter++){
       if(computeSym(pos) >= SYM_THR) break;
       if(moved.size > moveLimit) break;
@@ -129,10 +272,8 @@
       for(const o of orphans){
         const tx = 100 - o.x, ty = o.y;
         const excl = new Set([...moved, o.dancerId]);
-        const candidate = pickCandidate(pos, tx, ty, excl, false);
-        if(!candidate) continue;
-        if(!passesDistCheck(candidate, tx, ty, pos)) continue; // fails → skip
-        jobs.push({ cost: candidateScore(candidate, tx, ty), tx, ty, filler: candidate });
+        const filler = findFiller(pos, tx, ty, excl, false);
+        if(filler) jobs.push({ cost: candidateScore(filler, tx, ty), tx, ty, filler });
       }
 
       if(!jobs.length) break;
@@ -152,22 +293,17 @@
   // ── Step 1: symmetry check ────────────────────────────────────────────────
   if(computeSym(positions) >= SYM_THR) return positions;
 
-  // ── Step 2: pick primary candidate (Method A = lowest score) ─────────────
+  // ── Step 2: Method A — iterate candidates lowest score first ─────────────
   const absRef = absentPos[0];
-  const fillerA = pickCandidate(positions, absRef.x, absRef.y, new Set(), false);
-  if(!fillerA) return positions;
-  const resultA = runFill(fillerA.dancerId);
+  const resultA = runFill(false);
   let best = resultA;
 
-  // ── Method B: if A exceeds move limit, try second-lowest scorer ──────────
+  // ── Method B: if A exceeds move limit, skip first score tier and retry ───
   if(resultA.overLimit){
-    const fillerB = pickCandidate(positions, absRef.x, absRef.y, new Set(), true);
-    if(fillerB){
-      const resultB = runFill(fillerB.dancerId);
-      if(resultB.movedCount < resultA.movedCount ||
-        (resultB.movedCount === resultA.movedCount && resultB.sym > resultA.sym)){
-        best = resultB;
-      }
+    const resultB = runFill(true);
+    if(resultB.movedCount < resultA.movedCount ||
+      (resultB.movedCount === resultA.movedCount && resultB.sym > resultA.sym)){
+      best = resultB;
     }
   }
 
@@ -211,7 +347,7 @@ function optimizeFormation(f, prev, nextF){
   const absPts=absentPositions(f);
   // Pass next formation's positions so closeGap can penalise large transition jumps
   const nextPositions = nextF ? absFilter(nextF.positions) : null;
-  closeGap(pos, absPts, 'exact', nextPositions, f.id, f.vipDancerId);
+  closeGap(pos, absPts, 'exact', nextPositions, f.id, f.vipDancerId, f.positions);
   fixPoseSymmetry(pos);
   const {positions:pos2,actualVip}=placeVips(pos,f.vipDancerId,f.id);
   // Count moves vs the ORIGINAL formation positions (not vs previous formation)
