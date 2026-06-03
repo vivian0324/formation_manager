@@ -242,18 +242,47 @@ button:disabled{opacity:.35;cursor:not-allowed}
   .mob-panel { display: none; padding: 12px; }
   .mob-panel.active { display: block; }
 
-  /* Stage in editor panel — full width */
-  .mob-panel .esw { width: 100%; }
-  .mob-panel .estage { width: 100% !important; }
-  .mob-panel .epc {
+  /* Editor: stack stage + palette vertically, stage full width */
+  .eb { flex-direction: column !important; overflow: visible !important; }
+  .esc {
+    padding: 8px !important;
+    gap: 6px !important;
+    overflow: visible !important;
+    flex: none !important;
+  }
+  .esw {
+    position: relative !important;
     width: 100% !important;
-    margin-top: 10px;
+    /* Maintain 16:7 stage aspect ratio */
+    aspect-ratio: 16 / 7;
+    flex: none !important;
   }
-  .mob-panel .epc .pb {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
+  .estage {
+    position: absolute !important;
+    inset: 0 !important;
+    width: 100% !important;
+    height: 100% !important;
   }
+  .estage .dot { width: 26px !important; height: 26px !important; font-size: 8px !important; }
+  .estage .dot-lbl { font-size: 7px !important; }
+  .epc {
+    width: 100% !important;
+    border-left: none !important;
+    border-top: 1px solid var(--bdr) !important;
+    flex: none !important;
+    max-height: 180px;
+    overflow-y: auto;
+  }
+  .epc .pb {
+    display: flex !important;
+    flex-wrap: wrap !important;
+    gap: 5px !important;
+    padding: 6px !important;
+  }
+  /* Editor header buttons — bigger tap targets */
+  .eb .btn { min-height: 36px !important; }
+  /* Hide drag hint on mobile — saves space */
+  .esc > div:first-child .tm { display: none; }
 
   /* Formation cards — full width */
   .mob-panel .fcard { width: 100%; }
@@ -331,7 +360,6 @@ button:disabled{opacity:.35;cursor:not-allowed}
       <h3>Actions</h3>
       <div style="display:flex;flex-direction:column;gap:6px">
         <button class="btn btn-sm btn-acc" onclick="optimize()" style="width:100%">③ Optimize</button>
-        <button class="btn btn-sm btn-acc" onclick="newChoreography()" style="width:100%">❆ New Choreography</button>
         <button class="btn btn-sm btn-acc" onclick="newChoreography()" style="width:100%">❆ New Choreography</button>
       <button class="btn btn-sm" onclick="exportHTML()" style="width:100%">Export HTML</button>
       <button class="btn btn-sm" onclick="exportPDF()" style="width:100%">Export PDF</button>
@@ -743,7 +771,7 @@ function toggleVip(id){
 
 // ─── sidebar render ─────────────────────────────────────
 function renderSidebar(){
-  if(isMobile()) setTimeout(syncMobRoster, 0);
+  setTimeout(syncMobRoster, 0);
   // roster
   const dl = document.getElementById('d-list');
   dl.innerHTML = '';
@@ -847,7 +875,7 @@ function importJSON(ev){
         absentIds:  snap.absentIds  || [],
         vipIds:     snap.vipIds     || [],
         vipBackups: snap.vipBackups || {},
-        dir:        snap.dir        || 'bot',
+        dir:        snap.dir        || 'top',
         formations: snap.formations || [],
         results:    snap.results    || [],
         thresholds: snap.thresholds || {...THRESHOLD_DEFAULTS},
@@ -1967,8 +1995,18 @@ function addDancerMob(){
   const inp=document.getElementById('mob-nd-name');
   if(!inp) return;
   const name=inp.value.trim(); if(!name) return;
-  S.dancers.push({id:nid++,name,color:rndColor()});
-  inp.value=''; autoSave(); renderAll();
+  const d={id:uid(), name, color:COLORS[S.dancers.length % COLORS.length]};
+  S.dancers.push(d);
+  // Add to all existing formations
+  S.formations.forEach(f=>{
+    if(!f.positions.find(p=>p.dancerId===d.id)){
+      f.positions.push({x:5, y:10+(f.positions.length%8)*10, dancerId:d.id, pose:'none'});
+    }
+  });
+  inp.value='';
+  autoSave();
+  renderAll();
+  syncMobRoster();
 }
 
 function saveSlotMob(){
@@ -2119,26 +2157,43 @@ function exportPDF(){
     doc.setFillColor(20, 20, 38);
     doc.rect(STAGE_X, STAGE_Y, STAGE_W, STAGE_H, 'FD');
 
-    // ── Grid lines ──
-    doc.setDrawColor(45, 45, 70);
-    doc.setLineWidth(0.2);
-    // Vertical lines every 25%
-    [25,50,75].forEach(pct => {
+    // ── Grid lines — 3 tiers ──
+    // Tier 1: fine lines every 5% — very subtle
+    doc.setLineWidth(0.08);
+    for(let pct = 5; pct < 100; pct += 5){
+      if(pct % 25 === 0) continue; // drawn in tier 2
       const x = STAGE_X + pct2mm(pct, STAGE_W);
-      doc.line(x, STAGE_Y, x, STAGE_Y + STAGE_H);
-    });
-    // Horizontal lines every 25%
-    [25,50,75].forEach(pct => {
       const y = STAGE_Y + pct2mm(pct, STAGE_H);
+      doc.setDrawColor(50, 52, 80);
+      doc.line(x, STAGE_Y, x, STAGE_Y + STAGE_H);
+      doc.setDrawColor(50, 52, 80);
+      doc.line(STAGE_X, y, STAGE_X + STAGE_W, y);
+    }
+
+    // Tier 2: quarter lines every 25% — slightly brighter
+    doc.setLineWidth(0.18);
+    doc.setDrawColor(65, 68, 105);
+    [25, 75].forEach(pct => {
+      const x = STAGE_X + pct2mm(pct, STAGE_W);
+      const y = STAGE_Y + pct2mm(pct, STAGE_H);
+      doc.line(x, STAGE_Y, x, STAGE_Y + STAGE_H);
       doc.line(STAGE_X, y, STAGE_X + STAGE_W, y);
     });
 
-    // ── Centre cross ──
+    // Tier 3: centre lines at 50% — most prominent (non-amber)
+    doc.setLineWidth(0.25);
+    doc.setDrawColor(80, 84, 130);
+    const midX = STAGE_X + STAGE_W / 2;
+    const midY = STAGE_Y + STAGE_H / 2;
+    doc.line(midX, STAGE_Y, midX, STAGE_Y + STAGE_H);
+    doc.line(STAGE_X, midY, STAGE_X + STAGE_W, midY);
+
+    // ── Centre cross (amber accent) ──
     doc.setDrawColor(212, 175, 85);
-    doc.setLineWidth(0.35);
+    doc.setLineWidth(0.5);
     const cx = STAGE_X + STAGE_W/2, cy = STAGE_Y + STAGE_H/2;
-    doc.line(cx-4, cy, cx+4, cy);
-    doc.line(cx, cy-4, cx, cy+4);
+    doc.line(cx-5, cy, cx+5, cy);
+    doc.line(cx, cy-5, cx, cy+5);
 
     // ── Audience label ──
     doc.setFont('helvetica','bold');
@@ -2236,7 +2291,7 @@ function newChoreography(){
   }
   const thr=S.thresholds?{...S.thresholds}:{...THRESHOLD_DEFAULTS};
   S={dancers:[],absentIds:[],vipIds:[],vipBackups:{},vipHardIds:new Set(),
-     dir:'bot',formations:[],results:[],thresholds:thr};
+     dir:'top',formations:[],results:[],thresholds:thr};
   ['slot-name','mob-slot-name'].forEach(id=>{const el=document.getElementById(id);if(el)el.value='';});
   autoSave(); renderAll(); syncThresholdInputs();
   if(typeof syncMobThresholds==='function') syncMobThresholds();

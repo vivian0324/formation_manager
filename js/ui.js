@@ -1,6 +1,6 @@
 // UI
 
-zeFormation(f, prev, nextF);
+prev, nextF);
     fms.push(r); prev=r;
   });
   S.results=[{label, formations:fms}];

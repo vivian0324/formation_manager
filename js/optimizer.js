@@ -1,6 +1,6 @@
 // OPTIMIZER
 
-xtContent='On stage'; pal.appendChild(lbl);
+tage'; pal.appendChild(lbl);
     placed.forEach(d=>pal.appendChild(buildPalItem(d,true)));
   }
 }
@@ -206,4 +206,4 @@ function runOptimize(){
   let prev=null;
   S.formations.forEach((f,i)=>{
     const nextF = i+1 < S.formations.length ? S.formations[i+1] : null;
-    const r=optimi
+    const r=optimizeFormation(f, 

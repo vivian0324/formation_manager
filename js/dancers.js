@@ -53,7 +53,7 @@ function toggleVip(id){
 
 // ─── sidebar render ─────────────────────────────────────
 function renderSidebar(){
-  if(isMobile()) setTimeout(syncMobRoster, 0);
+  setTimeout(syncMobRoster, 0);
   // roster
   const dl = document.getElementById('d-list');
   dl.innerHTML = '';
@@ -123,4 +123,4 @@ function renderSlots(){
       +'<div style="font-size:9px;color:var(--txt3)">'+esc(slots[name]._savedAt||'')+'</div>';
     const lb=document.createElement('button'); lb.className='btn btn-sm btn-acc'; lb.textContent='Load';
     lb.onclick=()=>loadSlot(name);
-    const db=document.createElement('button'); db.classNa
+    const db=document.createElement('button'); db.className='btn btn-sm 

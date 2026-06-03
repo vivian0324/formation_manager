@@ -230,18 +230,47 @@ button:disabled{opacity:.35;cursor:not-allowed}
   .mob-panel { display: none; padding: 12px; }
   .mob-panel.active { display: block; }
 
-  /* Stage in editor panel — full width */
-  .mob-panel .esw { width: 100%; }
-  .mob-panel .estage { width: 100% !important; }
-  .mob-panel .epc {
+  /* Editor: stack stage + palette vertically, stage full width */
+  .eb { flex-direction: column !important; overflow: visible !important; }
+  .esc {
+    padding: 8px !important;
+    gap: 6px !important;
+    overflow: visible !important;
+    flex: none !important;
+  }
+  .esw {
+    position: relative !important;
     width: 100% !important;
-    margin-top: 10px;
+    /* Maintain 16:7 stage aspect ratio */
+    aspect-ratio: 16 / 7;
+    flex: none !important;
   }
-  .mob-panel .epc .pb {
-    display: flex;
-    flex-wrap: wrap;
-    gap: 6px;
+  .estage {
+    position: absolute !important;
+    inset: 0 !important;
+    width: 100% !important;
+    height: 100% !important;
   }
+  .estage .dot { width: 26px !important; height: 26px !important; font-size: 8px !important; }
+  .estage .dot-lbl { font-size: 7px !important; }
+  .epc {
+    width: 100% !important;
+    border-left: none !important;
+    border-top: 1px solid var(--bdr) !important;
+    flex: none !important;
+    max-height: 180px;
+    overflow-y: auto;
+  }
+  .epc .pb {
+    display: flex !important;
+    flex-wrap: wrap !important;
+    gap: 5px !important;
+    padding: 6px !important;
+  }
+  /* Editor header buttons — bigger tap targets */
+  .eb .btn { min-height: 36px !important; }
+  /* Hide drag hint on mobile — saves space */
+  .esc > div:first-child .tm { display: none; }
 
   /* Formation cards — full width */
   .mob-panel .fcard { width: 100%; }

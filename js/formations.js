@@ -1,6 +1,6 @@
 // FORMATIONS
 
-me='btn btn-sm btn-red'; db.textContent='×';
+btn-red'; db.textContent='×';
     db.onclick=()=>deleteSlot(name);
     row.appendChild(info); row.appendChild(lb); row.appendChild(db); cont.appendChild(row);
   });
@@ -34,7 +34,7 @@ function importJSON(ev){
         absentIds:  snap.absentIds  || [],
         vipIds:     snap.vipIds     || [],
         vipBackups: snap.vipBackups || {},
-        dir:        snap.dir        || 'bot',
+        dir:        snap.dir        || 'top',
         formations: snap.formations || [],
         results:    snap.results    || [],
         thresholds: snap.thresholds || {...THRESHOLD_DEFAULTS},
@@ -152,4 +152,4 @@ function moveFormationUp(id){
 }
 function moveFormationDown(id){
   const idx=S.formations.findIndex(x=>x.id===id);
-  
+  if(idx<0||idx>=
