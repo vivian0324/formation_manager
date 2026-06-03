@@ -1,6 +1,7 @@
 // EDITOR
 
- [S.formations[idx],S.formations[idx+1]]=[S.formations[idx+1],S.formations[idx]];
+if(idx<0||idx>=S.formations.length-1) return;
+  [S.formations[idx],S.formations[idx+1]]=[S.formations[idx+1],S.formations[idx]];
   renderFormations(); autoSave();
 }
 function insertFormationBefore(targetId){
@@ -251,5 +252,4 @@ function renderEPal(){
     avail.forEach(d=>pal.appendChild(buildPalItem(d,false)));
   }
   if(placed.length){
-    const lbl=el('div','psec'); lbl.style.marginTop='8px'; lbl.textContent='On stage'; pal.appendChild(lbl);
-   
+    const lbl=el('div','psec'); lbl.style.marginTop='8px'; lbl.te

@@ -1,6 +1,7 @@
 // FORMATIONS
 
-  db.onclick=()=>deleteSlot(name);
+me='btn btn-sm btn-red'; db.textContent='×';
+    db.onclick=()=>deleteSlot(name);
     row.appendChild(info); row.appendChild(lb); row.appendChild(db); cont.appendChild(row);
   });
 }
@@ -151,5 +152,4 @@ function moveFormationUp(id){
 }
 function moveFormationDown(id){
   const idx=S.formations.findIndex(x=>x.id===id);
-  if(idx<0||idx>=S.formations.length-1) return;
- 
+  

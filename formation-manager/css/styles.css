@@ -174,3 +174,93 @@ button:disabled{opacity:.35;cursor:not-allowed}
 /* save indicator */
 .save-dot{width:7px;height:7px;border-radius:50%;background:var(--grn);flex-shrink:0;display:none}
 .save-dot.vis{display:inline-block}
+
+/* ── MOBILE LAYOUT ─────────────────────────────────────────────────── */
+@media (max-width: 700px){
+  /* Hide desktop sidebar, show mobile nav */
+  .sidebar { display: none !important; }
+  .main { flex-direction: column; overflow: visible; }
+
+  /* Mobile header — compact */
+  header { padding: 8px 12px; }
+  header h1 { font-size: 15px; }
+  .subtitle { display: none; }
+
+  /* Mobile content area */
+  #mob-content {
+    flex: 1;
+    overflow-y: auto;
+    -webkit-overflow-scrolling: touch;
+    padding-bottom: 70px; /* space for tab bar */
+  }
+
+  /* Bottom tab bar */
+  #mob-tabs {
+    display: flex !important;
+    position: fixed;
+    bottom: 0; left: 0; right: 0;
+    background: var(--surf);
+    border-top: 1px solid var(--bdr);
+    z-index: 200;
+    padding-bottom: env(safe-area-inset-bottom);
+  }
+  .mob-tab {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    padding: 8px 4px 6px;
+    font-size: 9px;
+    color: var(--txt3);
+    cursor: pointer;
+    border: none;
+    background: none;
+    font-family: 'DM Mono', monospace;
+    letter-spacing: .05em;
+    text-transform: uppercase;
+    gap: 3px;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .mob-tab svg { width: 20px; height: 20px; stroke: var(--txt3); fill: none; stroke-width: 1.5; }
+  .mob-tab.active { color: var(--acc); }
+  .mob-tab.active svg { stroke: var(--acc); }
+
+  /* Mobile panels */
+  .mob-panel { display: none; padding: 12px; }
+  .mob-panel.active { display: block; }
+
+  /* Stage in editor panel — full width */
+  .mob-panel .esw { width: 100%; }
+  .mob-panel .estage { width: 100% !important; }
+  .mob-panel .epc {
+    width: 100% !important;
+    margin-top: 10px;
+  }
+  .mob-panel .epc .pb {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+
+  /* Formation cards — full width */
+  .mob-panel .fcard { width: 100%; }
+
+  /* Bigger tap targets */
+  .btn { min-height: 36px; }
+  .btn-sm { min-height: 32px; font-size: 12px; }
+  input[type=text], input[type=number], select {
+    min-height: 36px;
+    font-size: 14px !important;
+  }
+
+  /* Dancer chips — bigger */
+  .chip { padding: 6px 10px; font-size: 12px; }
+
+  /* Hide desktop-only elements on mobile */
+  .mob-hide { display: none !important; }
+}
+
+/* Hide mobile elements on desktop */
+#mob-tabs { display: none; }
+#mob-content { display: contents; }

@@ -1,6 +1,7 @@
 // UI
 
-rev=r;
+zeFormation(f, prev, nextF);
+    fms.push(r); prev=r;
   });
   S.results=[{label, formations:fms}];
   showPanel('results'); renderResults(); autoSave();
