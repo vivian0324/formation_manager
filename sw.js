@@ -2,7 +2,7 @@
 // Caches all app files for offline use.
 // Update CACHE_NAME when deploying a new version to force a refresh.
 
-const CACHE_NAME = 'formation-manager-v1';
+const CACHE_NAME = 'formation-manager-v20260603';
 const ASSETS = [
   '/formation_manager/',
   '/formation_manager/index.html',
