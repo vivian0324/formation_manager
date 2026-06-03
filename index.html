@@ -263,8 +263,9 @@ button:disabled{opacity:.35;cursor:not-allowed}
     width: 100% !important;
     height: 100% !important;
   }
-  .estage .dot { width: 26px !important; height: 26px !important; font-size: 8px !important; }
-  .estage .dot-lbl { font-size: 7px !important; }
+  .estage .dot { width: 18px !important; height: 18px !important; font-size: 6px !important; }
+  .estage .dot-lbl { font-size: 6px !important; }
+  #dgh .dot { width: 18px !important; height: 18px !important; font-size: 6px !important; }
   .epc {
     width: 100% !important;
     border-left: none !important;
@@ -295,16 +296,41 @@ button:disabled{opacity:.35;cursor:not-allowed}
     font-size: 14px !important;
   }
 
+  /* Formation name input — visible and tappable on mobile */
+  .fc-hdr input[type=text] {
+    background: var(--surf3) !important;
+    border: 1px solid var(--bdr2) !important;
+    border-radius: var(--r) !important;
+    padding: 4px 8px !important;
+    font-size: 13px !important;
+    font-weight: 500 !important;
+    color: var(--txt) !important;
+    min-height: 32px !important;
+    flex: 1 !important;
+    min-width: 0 !important;
+  }
+  /* Wrap fc-hdr to two rows on small screens */
+  .fc-hdr {
+    flex-wrap: wrap !important;
+    gap: 4px !important;
+  }
+
   /* Dancer chips — bigger */
   .chip { padding: 6px 10px; font-size: 12px; }
 
   /* Hide desktop-only elements on mobile */
   .mob-hide { display: none !important; }
+  .desk-only { display: none !important; }
+  .mob-only { display: inline !important; }
+  /* Show select mode button on mobile only */
+  #mob-sel-btn { display: inline-flex !important; }
 }
 
 /* Hide mobile elements on desktop */
 #mob-tabs { display: none; }
 #mob-content { display: contents; }
+.mob-only { display: none; }
+.desk-only { display: inline; }
 </style>
 </head>
 <body>
@@ -554,7 +580,7 @@ button:disabled{opacity:.35;cursor:not-allowed}
       <div style="flex:1"></div>
       <button class="btn btn-acc" onclick="runOptimize()">Optimize ↗</button>
     </div>
-    <div class="alert al-info" id="f-tip"><span>ℹ</span><div>Build formations with <strong>all</strong> dancers (absent included). Set pose and VIP per formation in the editor. <strong>Ctrl/Cmd+click</strong> to multi-select dancers and move together.</div></div>
+    <div class="alert al-info" id="f-tip"><span>ℹ</span><div>Build formations with <strong>all</strong> dancers (absent included). Set pose and VIP per formation in the editor. <strong class="desk-only">Ctrl/Cmd+click</strong><strong class="mob-only">Tap "Select" button</strong> to multi-select dancers and move together.</div></div>
     <div class="leg">
       <span class="leg-item"><span class="leg-dot" style="background:var(--blu)"></span>Stand</span>
       <span class="leg-item"><span class="leg-dot" style="background:var(--pur)"></span>Floor</span>
@@ -588,7 +614,7 @@ button:disabled{opacity:.35;cursor:not-allowed}
   <div class="eh">
     <div>
       <h2 id="e-title">Edit Formation</h2>
-      <div style="font-size:10px;color:var(--txt3);font-family:'DM Mono',monospace;margin-top:1px">Drag from palette → stage · drag to reposition · Ctrl/Cmd+click multi-select · right-click to remove</div>
+      <div style="font-size:10px;color:var(--txt3);font-family:'DM Mono',monospace;margin-top:1px"><span class="desk-only">Drag from palette → stage · drag to reposition · Ctrl/Cmd+click multi-select · right-click to remove</span><span class="mob-only">Drag from palette → stage · drag to reposition · tap Select to multi-select · tap × to remove</span></div>
     </div>
     <div style="flex:1"></div>
     <label style="display:flex;align-items:center;gap:4px;font-size:11px;color:var(--txt3);cursor:pointer">
@@ -613,15 +639,19 @@ button:disabled{opacity:.35;cursor:not-allowed}
   <div class="eb">
     <div class="esc">
       <div style="display:flex;align-items:center;gap:8px;flex-wrap:wrap">
-        <span class="tm">Drag · right-click/× to remove · Ctrl/Cmd+click to multi-select</span>
+        <span class="tm desk-only">Drag · right-click/× to remove · Ctrl/Cmd+click to multi-select</span><span class="tm mob-only">Drag to reposition · tap × to remove · use Select for multi-select</span>
         <div style="flex:1"></div>
         <span id="e-vip-lbl" style="font-size:11px;color:var(--acc);font-family:'DM Mono',monospace"></span>
         <span id="e-sel-lbl" style="font-size:11px;color:var(--blu);font-family:'DM Mono',monospace"></span>
+        <button id="mob-sel-btn" class="btn btn-sm" onclick="toggleSelectMode()"
+          style="display:none;font-size:11px" title="Tap dancers to select, then drag any to move group">
+          ☐ Select
+        </button>
       </div>
       <div class="esw">
         <div class="estage" id="estage"
           ondragover="eDragOver(event)" ondrop="eDropPal(event)"
-          onmousemove="eMouseMove(event)" onmouseup="eMouseUp(event)">
+>
           <div class="sg"></div><div class="scv"></div><div class="sch"></div>
           <div class="drop-ghost" id="dg-ghost"></div>
           <div class="saud" id="e-aud"><span class="saud-lbl">AUDIENCE</span></div>
@@ -1084,13 +1114,13 @@ function makeStage(f, editable){
 // ═══════════════════════════════════════════════════════
 // EDITOR
 // ═══════════════════════════════════════════════════════
-let eFormId=null, ePts=[], eDrag=null, eSelected=new Set();
+let eFormId=null, ePts=[], eDrag=null, eSelected=new Set(), eSelectMode=false;
 // Undo history: {fid, positions, vipDancerId} snapshots saved before each editor save
 const eUndoStack = {}; // keyed by formation id, stores array of snapshots
 
 function openEditor(fid){
   const f=S.formations.find(x=>x.id===fid); if(!f) return;
-  eFormId=fid; ePts=deepClone(f.positions); eSelected=new Set();
+  eFormId=fid; ePts=deepClone(f.positions); eSelected=new Set(); eSelectMode=false;
   document.getElementById('e-title').textContent='Edit: '+f.name;
   // audience bar
   const ab=document.getElementById('e-aud');
@@ -1105,7 +1135,7 @@ function openEditor(fid){
   document.getElementById('eo').classList.add('open');
   renderEStage(); renderEPal();
 }
-function eClose(){ document.getElementById('eo').classList.remove('open'); eFormId=null; eDrag=null; eSelected=new Set(); }
+function eClose(){ document.getElementById('eo').classList.remove('open'); eFormId=null; eDrag=null; eSelected=new Set(); eSelectMode=false; updateSelBtn(); }
 function eSave(){
   const f=S.formations.find(x=>x.id===eFormId); if(!f) return;
   // Snapshot current state BEFORE overwriting (enables Ctrl+Z revert)
@@ -1193,13 +1223,37 @@ function renderEStage(){
       if(ev.button!==0) return;
       ev.preventDefault(); ev.stopPropagation();
       const isCtrl=ev.ctrlKey||ev.metaKey;
-      if(isCtrl){ if(eSelected.has(pos.dancerId)) eSelected.delete(pos.dancerId); else eSelected.add(pos.dancerId); updatePoseUI(); renderEStage(); }
-      else { if(!eSelected.has(pos.dancerId)){ eSelected=new Set([pos.dancerId]); updatePoseUI(); renderEStage(); } }
-      eStartDrag(ev, idx, d, wrap);
+      if(eSelectMode){
+        // Select mode: tap toggles selection, no drag starts immediately
+        if(eSelected.has(pos.dancerId)) eSelected.delete(pos.dancerId);
+        else eSelected.add(pos.dancerId);
+        updatePoseUI(); updateSelBtn(); renderEStage();
+        // Still allow drag if already selected (to move the group)
+        if(eSelected.has(pos.dancerId) && eSelected.size>0){
+          eStartDrag(ev, idx, d, wrap);
+        }
+      } else {
+        if(isCtrl){ if(eSelected.has(pos.dancerId)) eSelected.delete(pos.dancerId); else eSelected.add(pos.dancerId); updatePoseUI(); renderEStage(); }
+        else { if(!eSelected.has(pos.dancerId)){ eSelected=new Set([pos.dancerId]); updatePoseUI(); renderEStage(); } }
+        eStartDrag(ev, idx, d, wrap);
+      }
     });
     wrap.addEventListener('contextmenu',ev=>{ev.preventDefault(); eRemove(idx);});
     stage.appendChild(wrap);
   });
+}
+
+function toggleSelectMode(){
+  eSelectMode=!eSelectMode;
+  if(!eSelectMode){ eSelected=new Set(); renderEStage(); }
+  updateSelBtn();
+}
+function updateSelBtn(){
+  const btn=document.getElementById('mob-sel-btn');
+  if(!btn) return;
+  btn.textContent=eSelectMode?('☑ '+eSelected.size+' sel'):'☐ Select';
+  btn.style.background=eSelectMode?'var(--acc)':'';
+  btn.style.color=eSelectMode?'var(--bg)':'';
 }
 
 function eRemove(idx){
@@ -1210,7 +1264,7 @@ function eRemove(idx){
 }
 
 function updatePoseUI(){
-  const has=eSelected.size>0;
+  const has=eSelected.size>0; updateSelBtn();
   ['pb-st','pb-fl','pb-le','pb-ri','pb-no'].forEach(id=>{ const b=document.getElementById(id); if(b) b.disabled=!has; });
   if(has){
     const names=[...eSelected].map(id=>{ const d=S.dancers.find(x=>x.id===id); return d?d.name:'?'; });
@@ -1365,12 +1419,36 @@ document.addEventListener('pointerup',ev=>{
   const stage=document.getElementById('estage');
   if(!stage){ eDrag=null; return; }
   const rect=stage.getBoundingClientRect();
-  if(ev.clientX<rect.left||ev.clientX>rect.right||ev.clientY<rect.top||ev.clientY>rect.bottom){
+  const onStage=ev.clientX>=rect.left&&ev.clientX<=rect.right&&ev.clientY>=rect.top&&ev.clientY<=rect.bottom;
+  if(onStage){
+    // Place or move dancer on drop — same logic as eMouseUp
+    const pct=toPct(ev.clientX,ev.clientY,rect);
+    if(pct){
+      const s=snp(pct.x,pct.y);
+      if(eDrag.type==='pal'){
+        // Drag from palette → place on stage
+        if(!ePts.find(p=>p.dancerId===eDrag.dancerId)){
+          ePts.push({x:s.x,y:s.y,dancerId:eDrag.dancerId,pose:'none'});
+        }
+      } else if(eDrag.type==='stage'){
+        // Drag existing dancer to new position
+        const primary=ePts[eDrag.primaryIdx];
+        if(primary){
+          const dx=s.x-primary.x, dy=s.y-primary.y;
+          dragMulti.forEach(i=>{
+            if(ePts[i]){ ePts[i].x=Math.min(97,Math.max(3,ePts[i].x+dx)); ePts[i].y=Math.min(93,Math.max(3,ePts[i].y+dy)); }
+          });
+        }
+        if(eDrag.wrapEl) eDrag.wrapEl.classList.remove('dragging');
+      }
+      renderEStage(); renderEPal();
+    }
+  } else {
     if(eDrag.wrapEl) eDrag.wrapEl.classList.remove('dragging');
-    eDrag=null; dragMulti=[];
-    document.getElementById('dgh').style.display='none';
-    document.getElementById('dg-ghost').style.display='none';
   }
+  eDrag=null; dragMulti=[];
+  document.getElementById('dgh').style.display='none';
+  document.getElementById('dg-ghost').style.display='none';
 });
 function toPct(cx,cy,rect){
   const x=((cx-rect.left)/rect.width)*100, y=((cy-rect.top)/rect.height)*100;

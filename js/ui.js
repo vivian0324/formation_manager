@@ -1,6 +1,44 @@
 // UI
 
-prev, nextF);
+ to the console,
+  // plus the computeSym score after removing absent dancers.
+  console.group('=== FORMATION DEBUG ===');
+  S.formations.forEach((f, fi) => {
+    console.group('Formation ' + (fi+1) + ': ' + f.name);
+    const remaining = f.positions.filter(p => !S.absentIds.includes(p.dancerId));
+    const absent    = f.positions.filter(p =>  S.absentIds.includes(p.dancerId));
+    console.log('ALL positions:');
+    f.positions.forEach(p => {
+      const d = S.dancers.find(x => x.id === p.dancerId);
+      const tag = S.absentIds.includes(p.dancerId) ? ' [ABSENT]' : '';
+      console.log('  ' + (d?d.name:'?') + tag + '  x=' + p.x.toFixed(1) + '  y=' + p.y.toFixed(1));
+    });
+    console.log('After removal — computeSym = ' + computeSym(remaining).toFixed(3));
+    absent.forEach(ap => {
+      const sorted = [...remaining].sort((a,b) =>
+        Math.hypot(a.x-ap.x,a.y-ap.y) - Math.hypot(b.x-ap.x,b.y-ap.y));
+      console.log('Absent ' + (S.dancers.find(x=>x.id===ap.dancerId)||{name:'?'}).name +
+        ' was at x=' + ap.x.toFixed(1) + ' y=' + ap.y.toFixed(1));
+      console.log('2 nearest remaining:');
+      sorted.slice(0,2).forEach(p => {
+        const d = S.dancers.find(x=>x.id===p.dancerId);
+        console.log('  ' + (d?d.name:'?') + '  x=' + p.x.toFixed(1) + '  y=' + p.y.toFixed(1) +
+          '  dist=' + Math.hypot(p.x-ap.x,p.y-ap.y).toFixed(1));
+      });
+    });
+    console.groupEnd();
+  });
+  console.groupEnd();
+  showAlert('Debug info printed to browser console (F12)', 'info');
+}
+
+function runOptimize(){
+  if(!S.absentIds.length){ showAlert('Mark at least one absent dancer first.','warn'); return; }
+  const fms=[], label='Optimized — absent dancer removed, neighbours mirror to centre';
+  let prev=null;
+  S.formations.forEach((f,i)=>{
+    const nextF = i+1 < S.formations.length ? S.formations[i+1] : null;
+    const r=optimizeFormation(f, prev, nextF);
     fms.push(r); prev=r;
   });
   S.results=[{label, formations:fms}];

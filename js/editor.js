@@ -91,13 +91,13 @@ function makeStage(f, editable){
 // ═══════════════════════════════════════════════════════
 // EDITOR
 // ═══════════════════════════════════════════════════════
-let eFormId=null, ePts=[], eDrag=null, eSelected=new Set();
+let eFormId=null, ePts=[], eDrag=null, eSelected=new Set(), eSelectMode=false;
 // Undo history: {fid, positions, vipDancerId} snapshots saved before each editor save
 const eUndoStack = {}; // keyed by formation id, stores array of snapshots
 
 function openEditor(fid){
   const f=S.formations.find(x=>x.id===fid); if(!f) return;
-  eFormId=fid; ePts=deepClone(f.positions); eSelected=new Set();
+  eFormId=fid; ePts=deepClone(f.positions); eSelected=new Set(); eSelectMode=false;
   document.getElementById('e-title').textContent='Edit: '+f.name;
   // audience bar
   const ab=document.getElementById('e-aud');
@@ -112,7 +112,7 @@ function openEditor(fid){
   document.getElementById('eo').classList.add('open');
   renderEStage(); renderEPal();
 }
-function eClose(){ document.getElementById('eo').classList.remove('open'); eFormId=null; eDrag=null; eSelected=new Set(); }
+function eClose(){ document.getElementById('eo').classList.remove('open'); eFormId=null; eDrag=null; eSelected=new Set(); eSelectMode=false; updateSelBtn(); }
 function eSave(){
   const f=S.formations.find(x=>x.id===eFormId); if(!f) return;
   // Snapshot current state BEFORE overwriting (enables Ctrl+Z revert)
@@ -200,13 +200,37 @@ function renderEStage(){
       if(ev.button!==0) return;
       ev.preventDefault(); ev.stopPropagation();
       const isCtrl=ev.ctrlKey||ev.metaKey;
-      if(isCtrl){ if(eSelected.has(pos.dancerId)) eSelected.delete(pos.dancerId); else eSelected.add(pos.dancerId); updatePoseUI(); renderEStage(); }
-      else { if(!eSelected.has(pos.dancerId)){ eSelected=new Set([pos.dancerId]); updatePoseUI(); renderEStage(); } }
-      eStartDrag(ev, idx, d, wrap);
+      if(eSelectMode){
+        // Select mode: tap toggles selection, no drag starts immediately
+        if(eSelected.has(pos.dancerId)) eSelected.delete(pos.dancerId);
+        else eSelected.add(pos.dancerId);
+        updatePoseUI(); updateSelBtn(); renderEStage();
+        // Still allow drag if already selected (to move the group)
+        if(eSelected.has(pos.dancerId) && eSelected.size>0){
+          eStartDrag(ev, idx, d, wrap);
+        }
+      } else {
+        if(isCtrl){ if(eSelected.has(pos.dancerId)) eSelected.delete(pos.dancerId); else eSelected.add(pos.dancerId); updatePoseUI(); renderEStage(); }
+        else { if(!eSelected.has(pos.dancerId)){ eSelected=new Set([pos.dancerId]); updatePoseUI(); renderEStage(); } }
+        eStartDrag(ev, idx, d, wrap);
+      }
     });
     wrap.addEventListener('contextmenu',ev=>{ev.preventDefault(); eRemove(idx);});
     stage.appendChild(wrap);
   });
+}
+
+function toggleSelectMode(){
+  eSelectMode=!eSelectMode;
+  if(!eSelectMode){ eSelected=new Set(); renderEStage(); }
+  updateSelBtn();
+}
+function updateSelBtn(){
+  const btn=document.getElementById('mob-sel-btn');
+  if(!btn) return;
+  btn.textContent=eSelectMode?('☑ '+eSelected.size+' sel'):'☐ Select';
+  btn.style.background=eSelectMode?'var(--acc)':'';
+  btn.style.color=eSelectMode?'var(--bg)':'';
 }
 
 function eRemove(idx){
@@ -217,7 +241,7 @@ function eRemove(idx){
 }
 
 function updatePoseUI(){
-  const has=eSelected.size>0;
+  const has=eSelected.size>0; updateSelBtn();
   ['pb-st','pb-fl','pb-le','pb-ri','pb-no'].forEach(id=>{ const b=document.getElementById(id); if(b) b.disabled=!has; });
   if(has){
     const names=[...eSelected].map(id=>{ const d=S.dancers.find(x=>x.id===id); return d?d.name:'?'; });
@@ -231,25 +255,4 @@ function updatePoseUI(){
       const b=document.getElementById(map[poses[0]]); if(b) b.classList.add('btn-acc');
     }
   } else {
-    document.getElementById('pose-who').textContent='Click dancer to select';
-    ['pb-st','pb-fl','pb-le','pb-ri','pb-no'].forEach(id=>{ const b=document.getElementById(id); if(b) b.classList.remove('btn-acc'); });
-  }
-  const lbl=document.getElementById('e-sel-lbl');
-  lbl.textContent=eSelected.size>1?eSelected.size+' selected':'';
-}
-function setPose(pose){
-  eSelected.forEach(did=>{ const p=ePts.find(x=>x.dancerId===did); if(p) p.pose=pose; });
-  updatePoseUI(); renderEStage(); renderEPal();
-}
-
-function renderEPal(){
-  const pal=document.getElementById('e-pal'); pal.innerHTML='';
-  const onStage=new Set(ePts.map(p=>p.dancerId));
-  const avail=S.dancers.filter(d=>!onStage.has(d.id));
-  const placed=S.dancers.filter(d=>onStage.has(d.id));
-  if(avail.length){
-    const lbl=el('div','psec'); lbl.textContent='Available — drag to stage'; pal.appendChild(lbl);
-    avail.forEach(d=>pal.appendChild(buildPalItem(d,false)));
-  }
-  if(placed.length){
-    const lbl=el('div','psec'); lbl.style.marginTop='8px'; lbl.textContent='On s
+    document.getElementById('pose-who').textContent='Click dancer to

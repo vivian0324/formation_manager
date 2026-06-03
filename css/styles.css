@@ -251,8 +251,9 @@ button:disabled{opacity:.35;cursor:not-allowed}
     width: 100% !important;
     height: 100% !important;
   }
-  .estage .dot { width: 26px !important; height: 26px !important; font-size: 8px !important; }
-  .estage .dot-lbl { font-size: 7px !important; }
+  .estage .dot { width: 18px !important; height: 18px !important; font-size: 6px !important; }
+  .estage .dot-lbl { font-size: 6px !important; }
+  #dgh .dot { width: 18px !important; height: 18px !important; font-size: 6px !important; }
   .epc {
     width: 100% !important;
     border-left: none !important;
@@ -283,13 +284,38 @@ button:disabled{opacity:.35;cursor:not-allowed}
     font-size: 14px !important;
   }
 
+  /* Formation name input — visible and tappable on mobile */
+  .fc-hdr input[type=text] {
+    background: var(--surf3) !important;
+    border: 1px solid var(--bdr2) !important;
+    border-radius: var(--r) !important;
+    padding: 4px 8px !important;
+    font-size: 13px !important;
+    font-weight: 500 !important;
+    color: var(--txt) !important;
+    min-height: 32px !important;
+    flex: 1 !important;
+    min-width: 0 !important;
+  }
+  /* Wrap fc-hdr to two rows on small screens */
+  .fc-hdr {
+    flex-wrap: wrap !important;
+    gap: 4px !important;
+  }
+
   /* Dancer chips — bigger */
   .chip { padding: 6px 10px; font-size: 12px; }
 
   /* Hide desktop-only elements on mobile */
   .mob-hide { display: none !important; }
+  .desk-only { display: none !important; }
+  .mob-only { display: inline !important; }
+  /* Show select mode button on mobile only */
+  #mob-sel-btn { display: inline-flex !important; }
 }
 
 /* Hide mobile elements on desktop */
 #mob-tabs { display: none; }
 #mob-content { display: contents; }
+.mob-only { display: none; }
+.desk-only { display: inline; }

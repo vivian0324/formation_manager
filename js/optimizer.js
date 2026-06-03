@@ -1,6 +1,27 @@
 // OPTIMIZER
 
-tage'; pal.appendChild(lbl);
+ select';
+    ['pb-st','pb-fl','pb-le','pb-ri','pb-no'].forEach(id=>{ const b=document.getElementById(id); if(b) b.classList.remove('btn-acc'); });
+  }
+  const lbl=document.getElementById('e-sel-lbl');
+  lbl.textContent=eSelected.size>1?eSelected.size+' selected':'';
+}
+function setPose(pose){
+  eSelected.forEach(did=>{ const p=ePts.find(x=>x.dancerId===did); if(p) p.pose=pose; });
+  updatePoseUI(); renderEStage(); renderEPal();
+}
+
+function renderEPal(){
+  const pal=document.getElementById('e-pal'); pal.innerHTML='';
+  const onStage=new Set(ePts.map(p=>p.dancerId));
+  const avail=S.dancers.filter(d=>!onStage.has(d.id));
+  const placed=S.dancers.filter(d=>onStage.has(d.id));
+  if(avail.length){
+    const lbl=el('div','psec'); lbl.textContent='Available — drag to stage'; pal.appendChild(lbl);
+    avail.forEach(d=>pal.appendChild(buildPalItem(d,false)));
+  }
+  if(placed.length){
+    const lbl=el('div','psec'); lbl.style.marginTop='8px'; lbl.textContent='On stage'; pal.appendChild(lbl);
     placed.forEach(d=>pal.appendChild(buildPalItem(d,true)));
   }
 }
@@ -120,12 +141,36 @@ document.addEventListener('pointerup',ev=>{
   const stage=document.getElementById('estage');
   if(!stage){ eDrag=null; return; }
   const rect=stage.getBoundingClientRect();
-  if(ev.clientX<rect.left||ev.clientX>rect.right||ev.clientY<rect.top||ev.clientY>rect.bottom){
+  const onStage=ev.clientX>=rect.left&&ev.clientX<=rect.right&&ev.clientY>=rect.top&&ev.clientY<=rect.bottom;
+  if(onStage){
+    // Place or move dancer on drop — same logic as eMouseUp
+    const pct=toPct(ev.clientX,ev.clientY,rect);
+    if(pct){
+      const s=snp(pct.x,pct.y);
+      if(eDrag.type==='pal'){
+        // Drag from palette → place on stage
+        if(!ePts.find(p=>p.dancerId===eDrag.dancerId)){
+          ePts.push({x:s.x,y:s.y,dancerId:eDrag.dancerId,pose:'none'});
+        }
+      } else if(eDrag.type==='stage'){
+        // Drag existing dancer to new position
+        const primary=ePts[eDrag.primaryIdx];
+        if(primary){
+          const dx=s.x-primary.x, dy=s.y-primary.y;
+          dragMulti.forEach(i=>{
+            if(ePts[i]){ ePts[i].x=Math.min(97,Math.max(3,ePts[i].x+dx)); ePts[i].y=Math.min(93,Math.max(3,ePts[i].y+dy)); }
+          });
+        }
+        if(eDrag.wrapEl) eDrag.wrapEl.classList.remove('dragging');
+      }
+      renderEStage(); renderEPal();
+    }
+  } else {
     if(eDrag.wrapEl) eDrag.wrapEl.classList.remove('dragging');
-    eDrag=null; dragMulti=[];
-    document.getElementById('dgh').style.display='none';
-    document.getElementById('dg-ghost').style.display='none';
   }
+  eDrag=null; dragMulti=[];
+  document.getElementById('dgh').style.display='none';
+  document.getElementById('dg-ghost').style.display='none';
 });
 function toPct(cx,cy,rect){
   const x=((cx-rect.left)/rect.width)*100, y=((cy-rect.top)/rect.height)*100;
@@ -168,42 +213,4 @@ function symLbl(pos){ const s=computeSym(pos); return s>.82?'✦ High':s>.5?'◈
 // OPTIMIZATION ENGINE
 // ═══════════════════════════════════════════════════════
 function debugFormation(){
-  // Print all dancer coordinates for all formations to the console,
-  // plus the computeSym score after removing absent dancers.
-  console.group('=== FORMATION DEBUG ===');
-  S.formations.forEach((f, fi) => {
-    console.group('Formation ' + (fi+1) + ': ' + f.name);
-    const remaining = f.positions.filter(p => !S.absentIds.includes(p.dancerId));
-    const absent    = f.positions.filter(p =>  S.absentIds.includes(p.dancerId));
-    console.log('ALL positions:');
-    f.positions.forEach(p => {
-      const d = S.dancers.find(x => x.id === p.dancerId);
-      const tag = S.absentIds.includes(p.dancerId) ? ' [ABSENT]' : '';
-      console.log('  ' + (d?d.name:'?') + tag + '  x=' + p.x.toFixed(1) + '  y=' + p.y.toFixed(1));
-    });
-    console.log('After removal — computeSym = ' + computeSym(remaining).toFixed(3));
-    absent.forEach(ap => {
-      const sorted = [...remaining].sort((a,b) =>
-        Math.hypot(a.x-ap.x,a.y-ap.y) - Math.hypot(b.x-ap.x,b.y-ap.y));
-      console.log('Absent ' + (S.dancers.find(x=>x.id===ap.dancerId)||{name:'?'}).name +
-        ' was at x=' + ap.x.toFixed(1) + ' y=' + ap.y.toFixed(1));
-      console.log('2 nearest remaining:');
-      sorted.slice(0,2).forEach(p => {
-        const d = S.dancers.find(x=>x.id===p.dancerId);
-        console.log('  ' + (d?d.name:'?') + '  x=' + p.x.toFixed(1) + '  y=' + p.y.toFixed(1) +
-          '  dist=' + Math.hypot(p.x-ap.x,p.y-ap.y).toFixed(1));
-      });
-    });
-    console.groupEnd();
-  });
-  console.groupEnd();
-  showAlert('Debug info printed to browser console (F12)', 'info');
-}
-
-function runOptimize(){
-  if(!S.absentIds.length){ showAlert('Mark at least one absent dancer first.','warn'); return; }
-  const fms=[], label='Optimized — absent dancer removed, neighbours mirror to centre';
-  let prev=null;
-  S.formations.forEach((f,i)=>{
-    const nextF = i+1 < S.formations.length ? S.formations[i+1] : null;
-    const r=optimizeFormation(f, 
+  // Print all dancer coordinates for all formations
